@@ -1,14 +1,17 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using TableMasterApi.Model;
+using TableMasterApi.Model;
 using TableMasterApi.Service;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Charger la configuration à partir du fichier appsettings.json
-builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
+builder.Services.Configure<ConfigPerso>(builder.Configuration.GetSection("ConfigPerso"));
 
 // Ajouter JwtService à l'injection de dépendances
+builder.Services.AddSingleton<ConfigPerso>();
 builder.Services.AddSingleton<JwtService>();
 
 // Ajoutez les services d'authentification avec JWT
@@ -26,9 +29,9 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["JwtSettings:Issuer"],
-        ValidAudience = builder.Configuration["JwtSettings:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JwtSettings:SecretKey"]))
+        ValidIssuer = builder.Configuration["ConfigPerso:Issuer"],
+        ValidAudience = builder.Configuration["ConfigPerso:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["ConfigPerso:SecretKey"]))
     };
 });
 

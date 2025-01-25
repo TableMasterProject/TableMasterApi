@@ -14,6 +14,9 @@
     {
         public long Id { get; set; }
         public DateTime CreatedAt { get; set; }
+        public IEnumerable<TableEntityOut>? Tables { get; set; }
+        public IEnumerable<DailyActivityOut>? DailyActivitys { get; set; }
+        public IEnumerable<ClosedDayExceptionOut>? ClosedDayExceptions { get; set; }
     }
 
 

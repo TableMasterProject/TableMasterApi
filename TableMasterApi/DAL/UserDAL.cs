@@ -13,16 +13,17 @@ namespace TableMasterApi.DAL
 {
     public class UserDAL : Controller
     {
-        private readonly string _connectionString = "Server=127.0.0.1,1433;Database=TableMaster;User Id=sa;Password=Max2003?;Encrypt=False;TrustServerCertificate=False;";
+        private readonly ConfigPerso _config;
 
-        public UserDAL()
+        public UserDAL(ConfigPerso config)
         {
+            _config = config;
         }
 
         // Méthode pour récupérer un utilisateur par son ID
         public UserOut? GetUserById(long id)
         {
-            using (var connection = new SqlConnection(_connectionString))
+            using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = "SELECT Id, Email, Password, FirstName, LastName, AccountType, CreatedAt FROM [User] WHERE Id = @Id";
@@ -33,7 +34,7 @@ namespace TableMasterApi.DAL
 
         public UserOut? GetUserByEmail(string email)
         {
-            using (var connection = new SqlConnection(_connectionString))
+            using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = "SELECT Id, Email, Password, FirstName, LastName, AccountType, CreatedAt FROM [User] WHERE Email = @Email";
@@ -51,7 +52,7 @@ namespace TableMasterApi.DAL
             // Mettre à jour le mot de passe haché dans l'objet utilisateur
             user.Password = hashedPassword;
 
-            using (var connection = new SqlConnection(_connectionString))
+            using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
 
@@ -67,7 +68,7 @@ namespace TableMasterApi.DAL
 
         public UserOut PutUser(long idUser, UserIn user)
         {
-            using (var connection = new SqlConnection(_connectionString))
+            using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
 
@@ -88,7 +89,7 @@ namespace TableMasterApi.DAL
             var passwordHasher = new PasswordHasher<UserOut>();
             var hashedPassword = passwordHasher.HashPassword(user, newPassword);
 
-            using (var connection = new SqlConnection(_connectionString))
+            using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
 
@@ -104,7 +105,7 @@ namespace TableMasterApi.DAL
         }
         public bool DeletePassword(long id)
         {
-            using (var connection = new SqlConnection(_connectionString))
+            using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
 

@@ -4,15 +4,11 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using TableMasterApi.Model;
 
 namespace TableMasterApi.Service
 {
-    public class JwtSettings
-    {
-        public string SecretKey { get; set; }
-        public string Issuer { get; set; }
-        public string Audience { get; set; }
-    }
+    
 
     public class JwtService
     {
@@ -20,7 +16,7 @@ namespace TableMasterApi.Service
         private readonly string _issuer;
         private readonly string _audience;
 
-        public JwtService(IOptions<JwtSettings> jwtSettings)
+        public JwtService(IOptions<ConfigPerso> jwtSettings)
         {
             _secretKey = jwtSettings.Value.SecretKey;
             _issuer = jwtSettings.Value.Issuer;

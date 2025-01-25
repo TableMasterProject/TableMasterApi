@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Options;
 using System.Collections.Generic;
 using TableMasterApi.DAL;
 using TableMasterApi.Model;
@@ -10,13 +11,15 @@ using TableMasterApi.Service;
 [ApiController]
 public class UserController : ControllerBase
 {
-    private readonly UserDAL _userRepository = new UserDAL();
-    private readonly AuthDAL _authDAL = new AuthDAL();
+    private readonly UserDAL _userDAL;
+    private readonly AuthDAL _authDAL;
     private readonly JwtService _jwtService;
 
-    public UserController(JwtService jwtService)
+    public UserController(JwtService jwtService, IOptions<ConfigPerso> config)
     {
         _jwtService = jwtService;
+        _userDAL = new UserDAL(config.Value);
+        _authDAL = new AuthDAL();
     }
 
     // GET api/user/{id} -> Récupérer un utilisateur par ID
@@ -26,14 +29,15 @@ public class UserController : ControllerBase
     {
         try
         {
+            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
             if (id == null)
             {
                 return BadRequest();
             }
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-            var user = _userRepository.GetUserById(id);
+            var user = _userDAL.GetUserById(id);
             if (user == null)
             {
                 return NotFound();
@@ -51,14 +55,15 @@ public class UserController : ControllerBase
     {
         try
         {
+            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
             if (user == null)
             {
                 return BadRequest();
             }
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-            var userPut = _userRepository.PutUser(idUserToken,user);
+            var userPut = _userDAL.PutUser(idUserToken,user);
             if (user == null)
             {
                 return NotFound();
@@ -81,14 +86,15 @@ public class UserController : ControllerBase
     {
         try
         {
+            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
             if (passwordEntity == null)
             {
                 return BadRequest();
             }
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-            var user = _userRepository.GetUserById(idUserToken);
+            var user = _userDAL.GetUserById(idUserToken);
             if (user == null)
             {
                 return NotFound();
@@ -101,8 +107,11 @@ public class UserController : ControllerBase
                 return StatusCode(404, "ancien Mot de passe incorrect");
             }
 
-            var passwordChange = _userRepository.PutPassword(user, passwordEntity.NewPassword);
+            var passwordChange = _userDAL.PutPassword(user, passwordEntity.NewPassword);
 
+
+            if (!passwordChange)
+                return NotFound("Probleme lors du changement de mot de passe.");
 
             return Ok(passwordChange);
         }
@@ -123,7 +132,7 @@ public class UserController : ControllerBase
                 return BadRequest();
             }
 
-            var addedUser = _userRepository.AddUser(user);
+            var addedUser = _userDAL.AddUser(user);
             return Ok(addedUser);
         }
         catch (SqlException e)
@@ -145,9 +154,12 @@ public class UserController : ControllerBase
             var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
             var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-            var userPut = _userRepository.DeletePassword(idUserToken);
+            var deleted = _userDAL.DeletePassword(idUserToken);
 
-            return Ok(userPut);
+            if (!deleted)
+                return NotFound("User not found.");
+
+            return Ok(deleted);
         }
         catch (SqlException e)
         {
