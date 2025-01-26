@@ -20,31 +20,31 @@ namespace TableMasterApi.Controllers
         }
 
         // GET: api/Restaurant
-        //[HttpGet]
-        //[Authorize]
-        //public ActionResult<ICollection<RestaurantOut>> GetAll()
-        //{
-        //    var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-        //    var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+        [HttpGet]
+        [Authorize]
+        public ActionResult<ICollection<RestaurantOut>> GetAll([FromQuery] SearchRestaurant search)
+        {
+            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-        //    var restaurants = _restaurantDAL.GetAllRestaurants();
-        //    return Ok(restaurants);
-        //}
+            var restaurants = _restaurantDAL.GetRestaurants(search);
+            return Ok(restaurants);
+        }
 
-        //// GET: api/Restaurant/{id}
-        //[HttpGet("{id}")]
-        //[Authorize]
-        //public ActionResult<RestaurantOut> Get(long id)
-        //{
-        //    var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-        //    var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+        // GET: api/Restaurant/{id}
+        [HttpGet("{id}")]
+        [Authorize]
+        public ActionResult<RestaurantOut> Get(long id)
+        {
+            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-        //    var restaurant = _restaurantDAL.GetRestaurantById(id);
-        //    if (restaurant == null)
-        //        return NotFound("Restaurant not found.");
+            var restaurant = _restaurantDAL.GetRestaurantById(id);
+            if (restaurant == null)
+                return NotFound("Restaurant not found.");
 
-        //    return Ok(restaurant);
-        //}
+            return Ok(restaurant);
+        }
 
         // POST: api/Restaurant
         [HttpPost]

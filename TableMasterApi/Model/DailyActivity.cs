@@ -4,8 +4,8 @@
     {
         public long RestaurantId { get; set; }
         public byte DayOfWeek { get; set; }
-        public DateTime StartTime { get; set; }
-        public DateTime EndTime { get; set; }
+        public TimeSpan StartTime { get; set; }
+        public TimeSpan EndTime { get; set; }
     }
     public class DailyActivityOut : DailyActivityIn
     {
