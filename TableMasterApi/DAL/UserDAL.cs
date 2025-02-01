@@ -21,30 +21,32 @@ namespace TableMasterApi.DAL
         }
 
         // Méthode pour récupérer un utilisateur par son ID
-        public UserOut? GetUserById(long id)
+        public async Task<UserOut?> GetUserById(long id)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = "SELECT Id, Email, Password, FirstName, LastName, AccountType, CreatedAt FROM [User] WHERE Id = @Id";
-                var user = connection.Query<UserOut>(query, new { Id = id }).FirstOrDefault();
+                IEnumerable<UserOut> IEnumerableuser = await connection.QueryAsync<UserOut>(query, new { Id = id });
+                UserOut? user = IEnumerableuser.FirstOrDefault();
                 return user;
             }
         }
 
-        public UserOut? GetUserByEmail(string email)
+        public async Task<UserOut?> GetUserByEmail(string email)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = "SELECT Id, Email, Password, FirstName, LastName, AccountType, CreatedAt FROM [User] WHERE Email = @Email";
-                var user = connection.Query<UserOut>(query, new { Email = email }).FirstOrDefault();
+                IEnumerable<UserOut> IEnumerableuser = await connection.QueryAsync<UserOut>(query, new { Email = email });
+                UserOut? user = IEnumerableuser.FirstOrDefault();
                 return user;
             }
         }
 
         // Ajouter un utilisateur
-        public UserOut AddUser(UserIn user)
+        public async Task<UserOut> AddUser(UserIn user)
         {
             var passwordHasher = new PasswordHasher<UserIn>();
             var hashedPassword = passwordHasher.HashPassword(user, user.Password);
@@ -61,12 +63,12 @@ namespace TableMasterApi.DAL
                             "INSERTED.LastName, INSERTED.AccountType, INSERTED.CreatedAt " +
                             "VALUES (@Email, @Password, @FirstName, @LastName, @AccountType)";
 
-                var insertedUser = connection.QuerySingle<UserOut>(query, user);
+                var insertedUser = await connection.QuerySingleAsync<UserOut>(query, user);
                 return insertedUser;
             }
         }
 
-        public UserOut PutUser(long idUser, UserIn user)
+        public async Task<UserOut> PutUser(long idUser, UserIn user)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
@@ -79,12 +81,12 @@ namespace TableMasterApi.DAL
                             "WHERE Id = @IdUser";
 
                 // Ajout de l'IdUser pour la mise à jour
-                var updatedUser = connection.QuerySingle<UserOut>(query, new { IdUser = idUser, user.Email, user.FirstName, user.LastName, user.AccountType });
+                var updatedUser = await connection.QuerySingleAsync<UserOut>(query, new { IdUser = idUser, user.Email, user.FirstName, user.LastName, user.AccountType });
                 return updatedUser;
             }
         }
 
-        public bool PutPassword(UserOut user, string newPassword)
+        public async Task<bool> PutPassword(UserOut user, string newPassword)
         {
             var passwordHasher = new PasswordHasher<UserOut>();
             var hashedPassword = passwordHasher.HashPassword(user, newPassword);
@@ -97,13 +99,13 @@ namespace TableMasterApi.DAL
                             "WHERE Id = @IdUser";
 
                 // Utilise Execute pour une mise à jour
-                var rowsAffected = connection.Execute(query, new { IdUser = user.Id, hashedPassword });
+                var rowsAffected = await connection.ExecuteAsync(query, new { IdUser = user.Id, hashedPassword });
 
                 // Si aucune ligne n'a été affectée, la mise à jour n'a pas eu lieu
                 return rowsAffected > 0;
             }
         }
-        public bool DeletePassword(long id)
+        public async Task<bool> DeletePassword(long id)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
@@ -112,7 +114,7 @@ namespace TableMasterApi.DAL
                 var query = "DELETE FROM [User] WHERE Id = @IdUser";
 
                 // Execute la requête de suppression
-                var rowsAffected = connection.Execute(query, new { IdUser = id });
+                var rowsAffected = await connection.ExecuteAsync(query, new { IdUser = id });
 
                 // Si une ligne a été affectée, la suppression a réussi
                 return rowsAffected > 0;

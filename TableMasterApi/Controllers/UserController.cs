@@ -25,7 +25,7 @@ public class UserController : ControllerBase
     // GET api/user/{id} -> Récupérer un utilisateur par ID
     [Authorize]
     [HttpGet("{id}")]
-    public ActionResult<UserOut> GetUserById(long id)
+    public async Task<ActionResult<UserOut>> GetUserById(long id)
     {
         try
         {
@@ -37,7 +37,7 @@ public class UserController : ControllerBase
                 return BadRequest();
             }
 
-            var user = _userDAL.GetUserById(id);
+            var user = await _userDAL.GetUserById(id);
             if (user == null)
             {
                 return NotFound();
@@ -51,7 +51,7 @@ public class UserController : ControllerBase
 
     [Authorize]
     [HttpPut]
-    public ActionResult<UserOut> PutUser([FromBody] UserIn user)
+    public async Task<ActionResult<UserOut>> PutUser([FromBody] UserIn user)
     {
         try
         {
@@ -63,7 +63,7 @@ public class UserController : ControllerBase
                 return BadRequest();
             }
 
-            var userPut = _userDAL.PutUser(idUserToken,user);
+            var userPut = await _userDAL.PutUser(idUserToken,user);
             if (user == null)
             {
                 return NotFound();
@@ -82,7 +82,7 @@ public class UserController : ControllerBase
     [Authorize]
     [HttpPut]
     [Route("Password")]
-    public ActionResult<bool> PutPassword([FromBody] PasswordEntity passwordEntity)
+    public async Task<ActionResult<bool>> PutPassword([FromBody] PasswordEntity passwordEntity)
     {
         try
         {
@@ -94,7 +94,7 @@ public class UserController : ControllerBase
                 return BadRequest();
             }
 
-            var user = _userDAL.GetUserById(idUserToken);
+            var user = await _userDAL.GetUserById(idUserToken);
             if (user == null)
             {
                 return NotFound();
@@ -107,7 +107,7 @@ public class UserController : ControllerBase
                 return StatusCode(404, "ancien Mot de passe incorrect");
             }
 
-            var passwordChange = _userDAL.PutPassword(user, passwordEntity.NewPassword);
+            var passwordChange = await _userDAL.PutPassword(user, passwordEntity.NewPassword);
 
 
             if (!passwordChange)
@@ -123,7 +123,7 @@ public class UserController : ControllerBase
 
     // POST api/user -> Ajouter un nouvel utilisateur
     [HttpPost]
-    public ActionResult<UserOut> AddUser([FromBody] UserIn user)
+    public async Task<ActionResult<UserOut>> AddUser([FromBody] UserIn user)
     {
         try
         {
@@ -132,7 +132,7 @@ public class UserController : ControllerBase
                 return BadRequest();
             }
 
-            var addedUser = _userDAL.AddUser(user);
+            var addedUser = await _userDAL.AddUser(user);
             return Ok(addedUser);
         }
         catch (SqlException e)
@@ -147,14 +147,14 @@ public class UserController : ControllerBase
 
     [Authorize]
     [HttpDelete]
-    public ActionResult<UserOut> DeleteUser()
+    public async Task<ActionResult<UserOut>> DeleteUser()
     {
         try
         {
             var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
             var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-            var deleted = _userDAL.DeletePassword(idUserToken);
+            var deleted = await _userDAL.DeletePassword(idUserToken);
 
             if (!deleted)
                 return NotFound("User not found.");

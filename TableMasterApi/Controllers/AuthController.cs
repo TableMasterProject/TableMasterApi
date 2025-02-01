@@ -22,7 +22,7 @@ namespace TableMasterApi.Controllers
         }
 
         [HttpPost]
-        public ActionResult<LoginUserOut> Login([FromBody] LoginUserIn loginUser)
+        public async Task<ActionResult<LoginUserOut>> Login([FromBody] LoginUserIn loginUser)
         {
             try
             {
@@ -31,7 +31,7 @@ namespace TableMasterApi.Controllers
                     return BadRequest();
                 }
 
-                var user = _userDAL.GetUserByEmail(loginUser.Email);
+                var user = await _userDAL.GetUserByEmail(loginUser.Email);
 
                 if (user == null)
                 {

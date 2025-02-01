@@ -4,6 +4,7 @@
     {
         public long UserId { get; set; }
         public long TableId { get; set; }
+        public long RestaurantId { get; set; }
         public DateTime ReservationDate { get; set; }
         public int NumberOfPeople { get; set; }
         public string SpecialRequest { get; set; }

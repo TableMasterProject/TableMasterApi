@@ -17,7 +17,7 @@ namespace TableMasterApi.DAL
             googleMapsService = new GoogleMapsService(config);
         }
 
-        public IEnumerable<RestaurantOut> GetRestaurants(SearchRestaurant search)
+        public async Task<IEnumerable<RestaurantOut>> GetRestaurants(SearchRestaurant search)
         {
             var query = @"
                 SELECT
@@ -63,7 +63,7 @@ namespace TableMasterApi.DAL
 
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
-                var restaurants = connection.Query<RestaurantOut>(query, new
+                IEnumerable<RestaurantOut> IEnumerablerestaurants = await connection.QueryAsync<RestaurantOut>(query, new
                 {
                     search.Offset,
                     search.PageSize,
@@ -71,12 +71,14 @@ namespace TableMasterApi.DAL
                     search.Longitude,
                     search.CuisineType,
                     search.PaymentMethods
-                }).ToList();
+                });
+
+                var restaurants = IEnumerablerestaurants.ToList();
 
                 foreach (var restaurant in restaurants)
                 {
-                    restaurant.DailyActivitys = GetDailyActivity(restaurant.Id);
-                    restaurant.ClosedDayExceptions = GetClosedDayException(restaurant.Id);
+                    restaurant.DailyActivitys = await GetDailyActivity(restaurant.Id);
+                    restaurant.ClosedDayExceptions = await GetClosedDayException(restaurant.Id);
                 }
                 return restaurants;
             }
@@ -104,7 +106,7 @@ namespace TableMasterApi.DAL
                                 @PostalCode, @City, @Latitude, @Longitude, @Phone, 
                                 @CuisineType, @PaymentMethods, @Description)";
 
-                var insertedRestaurant = connection.QuerySingle<RestaurantOut>(query, new
+                var insertedRestaurant = await connection.QuerySingleAsync<RestaurantOut>(query, new
                 {
                     UserId = idUser,restaurant.RestaurantName,restaurant.StreetNumber,restaurant.StreetName,
                     restaurant.PostalCode,restaurant.City,restaurant.Latitude,restaurant.Longitude, restaurant.Phone,
@@ -134,7 +136,7 @@ namespace TableMasterApi.DAL
                                 INSERTED.PostalCode, INSERTED.City, INSERTED.Latitude, INSERTED.Longitude, INSERTED.Phone, 
                                 INSERTED.CuisineType, INSERTED.PaymentMethods, INSERTED.Description, INSERTED.CreatedAt 
                             WHERE Id = @Id and UserId = @UserId";
-                var updatedRestaurant = connection.QuerySingle<RestaurantOut>(query, new
+                var updatedRestaurant = await connection.QuerySingleAsync<RestaurantOut>(query, new
                 {
                     UserId = idUser,
                     Id = id,
@@ -158,7 +160,7 @@ namespace TableMasterApi.DAL
             }
         }
 
-        public RestaurantOut? GetRestaurantById(long id)
+        public async Task<RestaurantOut?> GetRestaurantById(long id)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
@@ -177,78 +179,78 @@ namespace TableMasterApi.DAL
                                 FROM [Restaurant] R 
                                 WHERE R.Id = @Id;
                                 ";
-                var restaurant = connection.QuerySingleOrDefault<RestaurantOut>(query, new { Id = id });
+                var restaurant = await connection.QuerySingleOrDefaultAsync<RestaurantOut>(query, new { Id = id });
                 if(restaurant == null)
                     return null;
 
-                restaurant.DailyActivitys = GetDailyActivity(restaurant.Id);
-                restaurant.ClosedDayExceptions = GetClosedDayException(restaurant.Id);
-                restaurant.Tables = GetTables(restaurant.Id);
-                restaurant.Menu = GetMenus(restaurant.Id);
-                restaurant.Reviews = GetReviews(restaurant.Id);
+                restaurant.DailyActivitys = await GetDailyActivity(restaurant.Id);
+                restaurant.ClosedDayExceptions = await GetClosedDayException(restaurant.Id);
+                restaurant.Tables = await GetTables(restaurant.Id);
+                restaurant.Menu = await GetMenus(restaurant.Id);
+                restaurant.Reviews = await GetReviews(restaurant.Id);
 
                 return restaurant;
             }
         }
 
-        private IEnumerable<MenuOut> GetMenus(long idRestaurent)
+        private async Task<IEnumerable<MenuOut>> GetMenus(long idRestaurent)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = "SELECT * FROM [Menu] WHERE RestaurantId = @Id";
-                var menus = connection.Query<MenuOut>(query, new { Id = idRestaurent });
+                var menus = await connection.QueryAsync<MenuOut>(query, new { Id = idRestaurent });
                 return menus;
             }
         }
-        private IEnumerable<TableEntityOut> GetTables(long idRestaurent)
+        private async Task<IEnumerable<TableEntityOut>> GetTables(long idRestaurent)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = "SELECT * FROM [TableEntity] WHERE RestaurantId = @Id";
-                var tables = connection.Query<TableEntityOut>(query, new { Id = idRestaurent });
+                var tables = await connection.QueryAsync<TableEntityOut>(query, new { Id = idRestaurent });
                 return tables;
             }
         }
-        private IEnumerable<DailyActivityOut> GetDailyActivity(long idRestaurent)
+        private async Task<IEnumerable<DailyActivityOut>> GetDailyActivity(long idRestaurent)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = "SELECT * FROM [DailyActivity] WHERE RestaurantId = @Id";
-                var dailyActivitys = connection.Query<DailyActivityOut>(query, new { Id = idRestaurent });
+                var dailyActivitys = await connection.QueryAsync<DailyActivityOut>(query, new { Id = idRestaurent });
                 return dailyActivitys;
             }
         }
-        private IEnumerable<ClosedDayExceptionOut> GetClosedDayException(long idRestaurent)
+        private async Task<IEnumerable<ClosedDayExceptionOut>> GetClosedDayException(long idRestaurent)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = "SELECT * FROM [ClosedDayException] WHERE RestaurantId = @Id AND GETDATE() <= ExceptionDateEnd;";
-                var closedDayExceptions = connection.Query<ClosedDayExceptionOut>(query, new { Id = idRestaurent });
+                var closedDayExceptions = await connection.QueryAsync<ClosedDayExceptionOut>(query, new { Id = idRestaurent });
                 return closedDayExceptions;
             }
         }
-        private IEnumerable<ReviewOut> GetReviews(long idRestaurent)
+        private async Task<IEnumerable<ReviewOut>> GetReviews(long idRestaurent)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = "SELECT * FROM [Review] WHERE RestaurantId = @Id;";
-                var closedDayExceptions = connection.Query<ReviewOut>(query, new { Id = idRestaurent });
+                var closedDayExceptions = await connection.QueryAsync<ReviewOut>(query, new { Id = idRestaurent });
                 return closedDayExceptions;
             }
         }
 
-        public bool DeleteRestaurant(long idUser, long id)
+        public async Task<bool> DeleteRestaurant(long idUser, long id)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = "DELETE FROM [Restaurant] WHERE Id = @Id and UserId = @IdUser";
-                var affectedRows = connection.Execute(query, new { Id = id, IdUser = idUser });
+                var affectedRows = await connection.ExecuteAsync(query, new { Id = id, IdUser = idUser });
                 return affectedRows > 0;
             }
         }

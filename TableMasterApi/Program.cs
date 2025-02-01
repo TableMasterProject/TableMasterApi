@@ -1,9 +1,10 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using TableMasterApi.Model;
-using TableMasterApi.Model;
 using TableMasterApi.Service;
+using TableMasterApi.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +14,9 @@ builder.Services.Configure<ConfigPerso>(builder.Configuration.GetSection("Config
 // Ajouter JwtService à l'injection de dépendances
 builder.Services.AddSingleton<ConfigPerso>();
 builder.Services.AddSingleton<JwtService>();
+
+// Ajout de SignalR
+builder.Services.AddSignalR();
 
 // Ajoutez les services d'authentification avec JWT
 builder.Services.AddAuthentication(options =>
@@ -42,8 +46,6 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-
-
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -55,6 +57,8 @@ app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
+// Ajouter le Hub SignalR pour les réservations
+app.MapHub<ReservationHub>("/reservationHub");
 
 app.MapControllers();
 
