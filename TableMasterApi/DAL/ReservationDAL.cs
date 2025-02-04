@@ -59,8 +59,9 @@ namespace TableMasterApi.DAL
             }
         }
 
-        public async Task<ReservationOut> CreateReservationAsync(ReservationIn reservation)
+        public async Task<ReservationOut> CreateReservationAsync(long idUser, ReservationIn reservation)
         {
+            reservation.UserId = idUser;
             var query = @"
                 INSERT INTO [Reservation] (UserId, TableId, RestaurantId, ReservationDate, NumberOfPeople, SpecialRequest, CreatedAt)
                 OUTPUT 
@@ -81,7 +82,65 @@ namespace TableMasterApi.DAL
             }
         }
 
+        internal async Task<IEnumerable<ReservationOut>> GetMyReservations(long idUserToken, SearchReservations searchReservations)
+        {
+            var query = @"
+                SELECT 
+                    R.Id, 
+                    R.UserId, 
+                    R.TableId, 
+                    R.RestaurantId, 
+                    R.ReservationDate, 
+                    R.NumberOfPeople, 
+                    R.SpecialRequest, 
+                    R.CreatedAt,
+                    U.Id AS UserId, 
+                    U.Name AS UserName, 
+                    T.Id AS TableId, 
+                    T.Number AS TableNumber
+                FROM [Reservation] R
+                JOIN [User] U ON R.UserId = U.Id
+                JOIN [Table] T ON R.TableId = T.Id
+                WHERE 
+                    R.UserId = @UserId
+                ORDER BY R.ReservationDate ASC
+                OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
 
+            using (var connection = new SqlConnection(_config.ConnectionString))
+            {
+                var reservations = await connection.QueryAsync<ReservationOut, UserOut, TableEntityOut, ReservationOut>(
+                    query,
+                    (reservation, user, table) =>
+                    {
+                        reservation.User = user;
+                        reservation.Table = table;
+                        return reservation;
+                    },
+                    new
+                    {
+                        UserId = idUserToken,
+                        searchReservations.Offset,
+                        searchReservations.PageSize
+                    }
+                );
 
+                return reservations;
+            }
+        }
+        public async Task<bool> Delete(long idUser, long Id)
+        {
+            var query = @"DELETE FROM [Reservation] 
+                  WHERE Id = @Id AND UserId = @UserId;";
+
+            using (var connection = new SqlConnection(_config.ConnectionString))
+            {
+                var affectedRows = await connection.ExecuteAsync(query, new
+                {
+                    Id,
+                    UserId = idUser
+                });
+                return affectedRows > 0;
+            }
+        }
     }
 }

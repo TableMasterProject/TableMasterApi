@@ -1,9 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using TableMasterApi.DAL;
-using TableMasterApi.Hubs;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 
@@ -11,99 +9,109 @@ namespace TableMasterApi.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ReservationController : ControllerBase
+    public class ReviewController : ControllerBase
     {
-        private readonly ReservationDAL _reservationDAL;
-
+        private readonly ReviewDAL _reviewDAL;
         private readonly JwtService _jwtService;
-
-        private readonly IHubContext<ReservationHub> _hubContext;
-
-        public ReservationController(IOptions<ConfigPerso> config, JwtService jwtService, IHubContext<ReservationHub> hubContext)
+        public ReviewController(JwtService jwtService, IOptions<ConfigPerso> config)
         {
             _jwtService = jwtService;
-            _reservationDAL = new ReservationDAL(config.Value);
-            _hubContext = hubContext;
+            _reviewDAL = new ReviewDAL(config.Value);
         }
 
         [Authorize]
         [HttpGet("Restaurant/{Id}")]
-        public async Task<ActionResult<ReservationOut>> GetReservations(long Id, [FromQuery] DateOnly reservationDate)
+        public async Task<ActionResult<ICollection<ReviewOut>>> GetByIdRestaurant(long Id, [FromQuery] SearchReviews searchReviews)
         {
             try
             {
                 var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-                if (Id == null || reservationDate == null)
+                if (Id == null || searchReviews == null)
                 {
                     return BadRequest();
                 }
-                var reservations = await _reservationDAL.GetReservationsByRestaurantAsync(Id, reservationDate);
 
-                if (reservations == null)
-                    return NotFound("Aucune réservation trouvée.");
-
-                return Ok(reservations);
+                var liste = await _reviewDAL.GetByIdRestaurant(Id, searchReviews);
+                if (liste == null)
+                {
+                    return NotFound();
+                }
+                return Ok(liste);
             }
             catch (Exception e)
             {
                 return StatusCode(500, e.Message);
             }
-
         }
         [Authorize]
         [HttpGet("My")]
-        public async Task<ActionResult<ReservationOut>> GetMyReservations([FromQuery] SearchReservations searchReservations)
+        public async Task<ActionResult<ICollection<ReviewOut>>> GetMy([FromQuery] SearchReviews searchReviews)
         {
             try
             {
                 var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-                if (searchReservations == null)
+                if (searchReviews == null)
                 {
                     return BadRequest();
                 }
-                var reservations = await _reservationDAL.GetMyReservations(idUserToken, searchReservations);
 
-                if (reservations == null)
-                    return NotFound("Aucune réservation trouvée.");
-
-                return Ok(reservations);
+                var liste = await _reviewDAL.GetMy(idUserToken, searchReviews);
+                if (liste == null)
+                {
+                    return NotFound();
+                }
+                return Ok(liste);
             }
             catch (Exception e)
             {
                 return StatusCode(500, e.Message);
             }
-
         }
-
         [Authorize]
         [HttpPost]
-        public async Task<ActionResult<ReservationOut>> CreateReservation([FromBody] ReservationIn reservation)
+        public async Task<ActionResult<ReviewOut>> Post([FromBody] ReviewIn Entity)
         {
             try
             {
                 var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-                if (reservation == null)
-                    return BadRequest("Données de réservation invalides.");
-
-                var createdReservation = await _reservationDAL.CreateReservationAsync(idUserToken, reservation);
-
-                // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
-                await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + reservation.RestaurantId)
-                                          .SendAsync("ReceiveReservationUpdate", createdReservation);
-
-                return Ok(createdReservation);
+                var liste = await _reviewDAL.Add(idUserToken,Entity);
+                if (liste == null)
+                {
+                    return NotFound();
+                }
+                return Ok(liste);
             }
             catch (Exception e)
             {
                 return StatusCode(500, e.Message);
             }
-            
+        }
+        [Authorize]
+        [HttpPut("{id}")]
+        public async Task<ActionResult<ReviewOut>> Put(long id, [FromBody] ReviewIn Entity)
+        {
+            try
+            {
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
+                var liste = await _reviewDAL.Update(idUserToken, id, Entity);
+                if (liste == null)
+                {
+                    return NotFound();
+                }
+                return Ok(liste);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, e.Message);
+            }
         }
 
         [Authorize]
@@ -115,7 +123,7 @@ namespace TableMasterApi.Controllers
                 var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-                var deleted = await _reservationDAL.Delete(idUserToken, id);
+                var deleted = await _reviewDAL.Delete(idUserToken, id);
                 if (!deleted)
                     return NotFound("Restaurant not found.");
 
