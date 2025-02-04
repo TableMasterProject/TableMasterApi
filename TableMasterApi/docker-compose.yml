@@ -10,7 +10,9 @@ services:
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: "Max2003?"
-    entrypoint: /bin/bash -c "/opt/mssql/bin/sqlservr & sleep 30 && /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Max2003?' -C -Q 'CREATE DATABASE TableMaster;' && tail -f /dev/null"
+    volumes:
+      - ./sql-scripts:/sql-scripts  # Monte le dossier contenant ton fichier .sql
+    entrypoint: /bin/bash -c "/opt/mssql/bin/sqlservr & sleep 30 && /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Max2003?' -C -i /sql-scripts/init-db.sql && tail -f /dev/null"
     restart: always
     networks:
       - sqlserver-network
