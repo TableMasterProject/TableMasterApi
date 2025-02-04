@@ -9,6 +9,17 @@ using TableMasterApi.Hubs;
 var builder = WebApplication.CreateBuilder(args);
 
 // Charger la configuration à partir du fichier appsettings.json
+builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+
+// Vérifier si une variable d'environnement existe pour la connexion SQL
+var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+if (!string.IsNullOrEmpty(connectionString))
+{
+    // Écraser la valeur de ConfigPerso:ConnectionString avec celle de l'environnement
+    builder.Configuration["ConfigPerso:ConnectionString"] = connectionString;
+}
+
+// Ajouter la configuration ConfigPerso
 builder.Services.Configure<ConfigPerso>(builder.Configuration.GetSection("ConfigPerso"));
 
 // Ajouter JwtService à l'injection de dépendances

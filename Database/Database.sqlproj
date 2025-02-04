@@ -72,7 +72,4 @@
   <ItemGroup>
     <RefactorLog Include="Database.refactorlog" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="docker-compose.yml" />
-  </ItemGroup>
 </Project>

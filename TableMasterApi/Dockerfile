@@ -1,30 +1,26 @@
-# Consultez https://aka.ms/customizecontainer pour savoir comment personnaliser votre conteneur de débogage et comment Visual Studio utilise ce Dockerfile pour générer vos images afin d’accélérer le débogage.
-
-# Cet index est utilisé lors de l’exécution à partir de VS en mode rapide (par défaut pour la configuration de débogage)
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
-USER $APP_UID
-WORKDIR /app
-EXPOSE 8080
-EXPOSE 8081
-
-
-# Cette phase est utilisée pour générer le projet de service
+# Build image
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-ARG BUILD_CONFIGURATION=Release
-WORKDIR /src
-COPY ["TableMasterApi/TableMasterApi.csproj", "TableMasterApi/"]
-RUN dotnet restore "./TableMasterApi/TableMasterApi.csproj"
-COPY . .
-WORKDIR "/src/TableMasterApi"
-RUN dotnet build "./TableMasterApi.csproj" -c $BUILD_CONFIGURATION -o /app/build
+WORKDIR /App
 
-# Cette étape permet de publier le projet de service à copier dans la phase finale
-FROM build AS publish
-ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./TableMasterApi.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+# Copy everything and restore dependencies
+COPY . ./
+RUN dotnet restore
 
-# Cette phase est utilisée en production ou lors de l’exécution à partir de VS en mode normal (par défaut quand la configuration de débogage n’est pas utilisée)
-FROM base AS final
-WORKDIR /app
-COPY --from=publish /app/publish .
+# Build and publish a release
+RUN dotnet publish -c Release -o /out
+
+# Runtime image
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /App
+
+# Copier les fichiers publiés
+COPY --from=build /out ./
+
+# Définir l'URL sur laquelle l'application écoute
+ENV ASPNETCORE_URLS=http://+:8080
+
+# Exposer le port
+EXPOSE 8080
+
+# Point d'entrée
 ENTRYPOINT ["dotnet", "TableMasterApi.dll"]
