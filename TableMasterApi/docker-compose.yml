@@ -12,13 +12,20 @@ services:
       MSSQL_SA_PASSWORD: "Max2003?"
     volumes:
       - ./sql-scripts:/sql-scripts  # Monte le dossier contenant ton fichier .sql
-    entrypoint: /bin/bash -c "/opt/mssql/bin/sqlservr & sleep 30 && /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Max2003?' -C -i /sql-scripts/init-db.sql && tail -f /dev/null"
+    entrypoint: >
+      /bin/bash -c "
+      /opt/mssql/bin/sqlservr & 
+      while ! /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Max2003?' -C -Q 'SELECT 1' &>/dev/null; do
+        sleep 5
+      done;
+      /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Max2003?' -C -i /sql-scripts/init-db.sql;
+      wait"
     restart: always
     networks:
       - sqlserver-network
 
   api:
-    image: table_master_api:latest
+    build: .
     container_name: TableMasterApi
     depends_on:
       - sqlserver
