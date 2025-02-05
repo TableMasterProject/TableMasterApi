@@ -3,6 +3,6 @@
     public class SearchReservations
     {
         public long? Offset { get; set; }
-        public long? PageSize = 20;
+        public long? PageSize { get; set; } = 20;
     }
 }

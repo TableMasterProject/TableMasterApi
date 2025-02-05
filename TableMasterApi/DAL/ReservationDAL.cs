@@ -18,25 +18,33 @@ namespace TableMasterApi.DAL
         {
             var query = @"
                 SELECT 
-                    R.Id, 
-                    R.UserId, 
-                    R.TableId, 
-                    R.RestaurantId, 
-                    R.ReservationDate, 
-                    R.NumberOfPeople, 
-                    R.SpecialRequest, 
-                    R.CreatedAt,
-                    U.Id AS UserId, 
-                    U.Name AS UserName, 
-                    T.Id AS TableId, 
-                    T.Number AS TableNumber
-                FROM [Reservation] R
-                JOIN [User] U ON R.UserId = U.Id
-                JOIN [Table] T ON R.TableId = T.Id
-                WHERE 
-                    T.RestaurantId = @RestaurantId
-                    AND CAST(R.ReservationDate AS DATE) = @ReservationDate
-                ORDER BY R.ReservationDate ASC;";
+                R.Id,
+                R.UserId, 
+                R.TableId, 
+                R.RestaurantId, 
+                R.ReservationDate, 
+                R.NumberOfPeople, 
+                R.SpecialRequest, 
+                R.CreatedAt,
+                U.Id AS Id,
+                U.FirstName, 
+                U.LastName, 
+                U.Email, 
+                U.Password, 
+                U.AccountType, 
+                U.CreatedAt,
+                T.Id AS Id,
+                T.RestaurantId, 
+                T.TableNumber, 
+                T.NumberOfSeats, 
+                T.CreatedAt
+            FROM [Reservation] R
+            JOIN [User] U ON R.UserId = U.Id
+            JOIN [TableEntity] T ON R.TableId = T.Id
+            WHERE 
+                T.RestaurantId = @RestaurantId
+                AND CONVERT(VARCHAR, R.ReservationDate, 23) = @ReservationDate
+            ORDER BY R.ReservationDate ASC;";
 
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
@@ -51,9 +59,11 @@ namespace TableMasterApi.DAL
                     new
                     {
                         RestaurantId = restaurantId,
-                        ReservationDate = reservationDate // Prend uniquement la partie Date
-                    }
+                        ReservationDate = reservationDate.ToString("yyyy-MM-dd") // Conversion en string
+                    },
+                    splitOn: "Id,Id" // ✅ Correction ici
                 );
+
 
                 return reservations;
             }
@@ -86,25 +96,33 @@ namespace TableMasterApi.DAL
         {
             var query = @"
                 SELECT 
-                    R.Id, 
-                    R.UserId, 
-                    R.TableId, 
-                    R.RestaurantId, 
-                    R.ReservationDate, 
-                    R.NumberOfPeople, 
-                    R.SpecialRequest, 
-                    R.CreatedAt,
-                    U.Id AS UserId, 
-                    U.Name AS UserName, 
-                    T.Id AS TableId, 
-                    T.Number AS TableNumber
-                FROM [Reservation] R
-                JOIN [User] U ON R.UserId = U.Id
-                JOIN [Table] T ON R.TableId = T.Id
-                WHERE 
-                    R.UserId = @UserId
-                ORDER BY R.ReservationDate ASC
-                OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
+                R.Id,
+                R.UserId, 
+                R.TableId, 
+                R.RestaurantId, 
+                R.ReservationDate, 
+                R.NumberOfPeople, 
+                R.SpecialRequest, 
+                R.CreatedAt,
+                U.Id AS Id,
+                U.FirstName, 
+                U.LastName, 
+                U.Email, 
+                U.Password, 
+                U.AccountType, 
+                U.CreatedAt,
+                T.Id AS Id,
+                T.RestaurantId, 
+                T.TableNumber, 
+                T.NumberOfSeats, 
+                T.CreatedAt
+            FROM [Reservation] R
+            JOIN [User] U ON R.UserId = U.Id
+            JOIN [TableEntity] T ON R.TableId = T.Id
+            WHERE 
+                R.UserId = @UserId
+            ORDER BY R.ReservationDate ASC
+            OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
 
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
@@ -120,9 +138,11 @@ namespace TableMasterApi.DAL
                     {
                         UserId = idUserToken,
                         searchReservations.Offset,
-                        searchReservations.PageSize
-                    }
+                        searchReservations.PageSize,
+                    },
+                    splitOn: "Id,Id" // ✅ Correction ici
                 );
+
 
                 return reservations;
             }

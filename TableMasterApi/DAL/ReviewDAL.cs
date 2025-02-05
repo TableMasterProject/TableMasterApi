@@ -16,6 +16,7 @@ namespace TableMasterApi.DAL
         public async Task<IEnumerable<ReviewOut>> GetByIdRestaurant(long idRestaurant, SearchReviews searchReviews)
         {
             var query = @"SELECT * FROM review WHERE RestaurantId = @RestaurantId
+                            ORDER BY Id
                             OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
@@ -32,6 +33,7 @@ namespace TableMasterApi.DAL
         public async Task<IEnumerable<ReviewOut>> GetMy(long idUser, SearchReviews searchReviews)
         {
             var query = @"SELECT * FROM review WHERE UserId = @UserId
+                            ORDER BY Id
                             OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
