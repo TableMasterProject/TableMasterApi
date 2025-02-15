@@ -73,7 +73,7 @@ namespace TableMasterApi.DAL
         {
             reservation.UserId = idUser;
             var query = @"
-                INSERT INTO [Reservation] (UserId, TableId, RestaurantId, ReservationDate, NumberOfPeople, SpecialRequest, CreatedAt)
+                INSERT INTO [Reservation] (UserId, TableId, RestaurantId, ReservationDate, NumberOfPeople, SpecialRequest)
                 OUTPUT 
                     INSERTED.Id, 
                     INSERTED.UserId,
@@ -83,7 +83,7 @@ namespace TableMasterApi.DAL
                     INSERTED.NumberOfPeople,
                     INSERTED.SpecialRequest,
                     INSERTED.CreatedAt
-                VALUES (@UserId, @TableId, @RestaurantId, @ReservationDate, @NumberOfPeople, @SpecialRequest, GETDATE());";
+                VALUES (@UserId, @TableId, @RestaurantId, @ReservationDate, @NumberOfPeople, @SpecialRequest);";
 
             using (var connection = new SqlConnection(_config.ConnectionString))
             {

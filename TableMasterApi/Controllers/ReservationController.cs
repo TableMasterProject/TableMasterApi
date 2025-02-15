@@ -40,12 +40,12 @@ namespace TableMasterApi.Controllers
                 {
                     return BadRequest();
                 }
-                var reservations = await _reservationDAL.GetReservationsByRestaurantAsync(Id, reservationDate);
+                var resultes = await _reservationDAL.GetReservationsByRestaurantAsync(Id, reservationDate);
 
-                if (reservations == null)
+                if (resultes == null)
                     return NotFound("Aucune réservation trouvée.");
 
-                return Ok(reservations);
+                return Ok(resultes);
             }
             catch (Exception e)
             {
@@ -66,12 +66,12 @@ namespace TableMasterApi.Controllers
                 {
                     return BadRequest();
                 }
-                var reservations = await _reservationDAL.GetMyReservations(idUserToken, searchReservations);
+                var resultes = await _reservationDAL.GetMyReservations(idUserToken, searchReservations);
 
-                if (reservations == null)
+                if (resultes == null)
                     return NotFound("Aucune réservation trouvée.");
 
-                return Ok(reservations);
+                return Ok(resultes);
             }
             catch (Exception e)
             {
@@ -92,13 +92,13 @@ namespace TableMasterApi.Controllers
                 if (reservation == null)
                     return BadRequest("Données de réservation invalides.");
 
-                var createdReservation = await _reservationDAL.CreateReservationAsync(idUserToken, reservation);
+                var created = await _reservationDAL.CreateReservationAsync(idUserToken, reservation);
 
                 // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + reservation.RestaurantId)
-                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(createdReservation));
+                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
 
-                return Ok(createdReservation);
+                return Ok(created);
             }
             catch (Exception e)
             {

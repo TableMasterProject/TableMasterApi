@@ -2,6 +2,7 @@
 {
     public class RestaurantIn
     {
+        public long UserId { get; set; }
         public string RestaurantName { get; set; }
         public string StreetNumber { get; set; }
         public string StreetName { get; set; }
