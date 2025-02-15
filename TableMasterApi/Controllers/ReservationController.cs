@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 using TableMasterApi.DAL;
 using TableMasterApi.Hubs;
 using TableMasterApi.Model;
@@ -95,7 +96,7 @@ namespace TableMasterApi.Controllers
 
                 // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + reservation.RestaurantId)
-                                          .SendAsync("ReceiveReservationUpdate", createdReservation);
+                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(createdReservation));
 
                 return Ok(createdReservation);
             }
@@ -116,10 +117,14 @@ namespace TableMasterApi.Controllers
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
                 var deleted = await _reservationDAL.Delete(idUserToken, id);
-                if (!deleted)
+                if (deleted == null )
                     return NotFound("Restaurant not found.");
 
-                return Ok(deleted);
+                // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
+                await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + deleted.RestaurantId)
+                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
+
+                return Ok(deleted!=null);
             }
             catch (Exception e)
             {

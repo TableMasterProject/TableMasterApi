@@ -147,20 +147,31 @@ namespace TableMasterApi.DAL
                 return reservations;
             }
         }
-        public async Task<bool> Delete(long idUser, long Id)
+        public async Task<TableEntityOut?> Delete(long idUser, long id)
         {
-            var query = @"DELETE FROM [Reservation] 
-                  WHERE Id = @Id AND UserId = @UserId;";
+            var selectQuery = @"SELECT * FROM [Reservation] WHERE Id = @Id AND UserId = @UserId;";
+            var deleteQuery = @"DELETE FROM [Reservation] WHERE Id = @Id AND UserId = @UserId;";
 
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
-                var affectedRows = await connection.ExecuteAsync(query, new
+                var reservation = await connection.QueryFirstOrDefaultAsync<TableEntityOut>(selectQuery, new
                 {
-                    Id,
+                    Id = id,
                     UserId = idUser
                 });
-                return affectedRows > 0;
+
+                if (reservation == null)
+                    return null; // La réservation n'existe pas
+
+                var affectedRows = await connection.ExecuteAsync(deleteQuery, new
+                {
+                    Id = id,
+                    UserId = idUser
+                });
+
+                return affectedRows > 0 ? reservation : null;
             }
         }
+
     }
 }
