@@ -6,19 +6,19 @@ services:
     container_name: TableMasterDataBase
     hostname: TableMaster
     ports:
-      - "1433:1433"
+      - "${DB_PORT}:1433"
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "Max2003?"
+      MSSQL_SA_PASSWORD: "${DB_PASSWORD}"
     volumes:
       - ./sql-scripts:/sql-scripts  # Monte le dossier contenant ton fichier .sql
     entrypoint: >
       /bin/bash -c "
       /opt/mssql/bin/sqlservr & 
-      while ! /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Max2003?' -C -Q 'SELECT 1' &>/dev/null; do
+      while ! /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '${DB_PASSWORD}' -C -Q 'SELECT 1' &>/dev/null; do
         sleep 5
       done;
-      /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Max2003?' -C -i /sql-scripts/init-db.sql;
+      /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '${DB_PASSWORD}' -C -i /sql-scripts/init-db.sql;
       wait"
     restart: always
     networks:
@@ -31,9 +31,9 @@ services:
       - sqlserver
     environment:
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__DefaultConnection=Server=TableMaster;Database=TableMaster;User Id=sa;Password=Max2003?;Encrypt=False;TrustServerCertificate=False;
+      - ConnectionStrings__DefaultConnection=Server=TableMaster;Database=TableMaster;User Id=sa;Password=${DB_PASSWORD};Encrypt=False;TrustServerCertificate=False;
     ports:
-      - "8080:8080"
+      - "${API_PORT}:8080"
     restart: always
     networks:
       - sqlserver-network
