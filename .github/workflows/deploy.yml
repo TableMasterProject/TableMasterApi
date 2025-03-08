@@ -1,0 +1,38 @@
+name: CI/CD TableMaster
+
+on:
+  push:
+    branches:
+      - Dev
+      - Prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Definir les variables d'environnement
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/Prod" ]]; then
+            echo "ENV=Prod" >> $GITHUB_ENV
+            echo "DB_PASSWORD=ProdPassword123!" >> $GITHUB_ENV
+          else
+            echo "ENV=Dev" >> $GITHUB_ENV
+            echo "DB_PASSWORD=Max2003?" >> $GITHUB_ENV
+          fi
+
+      - name: Installer Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose
+
+      - name: Lancer les services avec Docker Compose
+        run: |
+          sed -i "s/Max2003?/${{ env.DB_PASSWORD }}/g" docker-compose.yml
+          docker compose up --build -d
+
+      - name: Verifier l'etat des conteneurs
+        run: docker ps -a
