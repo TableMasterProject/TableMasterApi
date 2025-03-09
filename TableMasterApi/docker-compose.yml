@@ -3,7 +3,7 @@ version: '3.8'
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: TableMasterDataBase
+    container_name: TableMasterDataBase-${NAME_ENV}
     hostname: TableMaster
     ports:
       - "${DB_PORT}:1433"
@@ -26,7 +26,7 @@ services:
 
   api:
     build: .
-    container_name: TableMasterApi
+    container_name: TableMasterApi-${NAME_ENV}
     depends_on:
       - sqlserver
     environment:
