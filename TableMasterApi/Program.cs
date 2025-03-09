@@ -8,21 +8,21 @@ using TableMasterApi.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Charger la configuration à partir du fichier appsettings.json
+// Charger la configuration ï¿½ partir du fichier appsettings.json
 builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 
-// Vérifier si une variable d'environnement existe pour la connexion SQL
+// Vï¿½rifier si une variable d'environnement existe pour la connexion SQL
 var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
 {
-    // Écraser la valeur de ConfigPerso:ConnectionString avec celle de l'environnement
+    // ï¿½craser la valeur de ConfigPerso:ConnectionString avec celle de l'environnement
     builder.Configuration["ConfigPerso:ConnectionString"] = connectionString;
 }
 
 // Ajouter la configuration ConfigPerso
 builder.Services.Configure<ConfigPerso>(builder.Configuration.GetSection("ConfigPerso"));
 
-// Ajouter JwtService à l'injection de dépendances
+// Ajouter JwtService ï¿½ l'injection de dï¿½pendances
 builder.Services.AddSingleton<ConfigPerso>();
 builder.Services.AddSingleton<JwtService>();
 
@@ -68,9 +68,10 @@ app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
-// Ajouter le Hub SignalR pour les réservations
+// Ajouter le Hub SignalR pour les rï¿½servations
 app.MapHub<ReservationHub>("/reservationHub");
 
 app.MapControllers();
 
 app.Run();
+
