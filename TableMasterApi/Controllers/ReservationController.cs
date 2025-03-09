@@ -1,4 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
@@ -15,6 +17,7 @@ namespace TableMasterApi.Controllers
     public class ReservationController : ControllerBase
     {
         private readonly ReservationDAL _reservationDAL;
+        private readonly RestaurantDAL _restaurantDAL;
 
         private readonly JwtService _jwtService;
 
@@ -24,6 +27,7 @@ namespace TableMasterApi.Controllers
         {
             _jwtService = jwtService;
             _reservationDAL = new ReservationDAL(config.Value);
+            _restaurantDAL = new RestaurantDAL(config.Value);
             _hubContext = hubContext;
         }
 
@@ -92,11 +96,24 @@ namespace TableMasterApi.Controllers
                 if (reservation == null)
                     return BadRequest("Données de réservation invalides.");
 
-                var created = await _reservationDAL.CreateReservationAsync(idUserToken, reservation);
+                var restaurant = await _restaurantDAL.GetRestaurantById(reservation.RestaurantId);
+                if (restaurant == null)
+                    return NotFound("Aucune Restaurant trouvée.");
+
+                reservation.UserId = idUserToken;
+                reservation.IsValidate = restaurant.IsAutoValidateReservation;
+                var created = await _reservationDAL.CreateReservationAsync(reservation);
 
                 // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + reservation.RestaurantId)
                                           .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
+
+                if (reservation.IsValidate)
+                {
+                    // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
+                    await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + restaurant.Id)
+                                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationValidate, JsonSerializer.Serialize(created));
+                }
 
                 return Ok(created);
             }
@@ -105,6 +122,46 @@ namespace TableMasterApi.Controllers
                 return StatusCode(500, e.Message);
             }
             
+        }
+
+        [Authorize]
+        [HttpGet("{id}/Validate")]
+        public async Task<ActionResult<ReservationOut>> ValidateReservations(long id, [FromQuery]bool IsValidate)
+        {
+            try
+            {
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
+                if (id == null)
+                {
+                    return BadRequest();
+                }
+                var Reservation = await _reservationDAL.GetMyReservationById(id);
+                if (Reservation == null)
+                    return NotFound("Aucune réservation trouvée.");
+
+                var Restaurant = await _restaurantDAL.GetRestaurantById(Reservation.RestaurantId);
+                if (Restaurant == null)
+                    return NotFound("Aucune Restaurant trouvée.");
+                if (Restaurant.UserId != idUserToken)
+                {
+                    return Unauthorized();
+                }
+
+                var resultes = await _reservationDAL.validateReservation(id, IsValidate);
+
+                // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
+                await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + Restaurant.Id)
+                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationValidate, JsonSerializer.Serialize(resultes));
+
+                return Ok(resultes);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, e.Message);
+            }
+
         }
 
         [Authorize]

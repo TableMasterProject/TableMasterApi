@@ -28,4 +28,11 @@
     <Property Name="ParentElementType" Value="SqlTable" />
     <Property Name="NewName" Value="RestaurantCity" />
   </Operation>
+  <Operation Name="Rename Refactor" Key="2504c90b-fd25-4cd4-b46b-22eafae1a429" ChangeDateTime="03/09/2025 16:05:22">
+    <Property Name="ElementName" Value="[dbo].[Restaurant].[Valida]" />
+    <Property Name="ElementType" Value="SqlSimpleColumn" />
+    <Property Name="ParentElementName" Value="[dbo].[Restaurant]" />
+    <Property Name="ParentElementType" Value="SqlTable" />
+    <Property Name="NewName" Value="IsAutoValidateReservation" />
+  </Operation>
 </Operations>

@@ -14,6 +14,7 @@
         public string CuisineType { get; set; }
         public string PaymentMethods { get; set; }
         public string Description { get; set; }
+        public Boolean IsAutoValidateReservation { get; set; }
     }
     public class RestaurantOut : RestaurantIn
     {

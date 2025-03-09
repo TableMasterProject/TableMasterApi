@@ -42,22 +42,6 @@ USE [$(DatabaseName)];
 
 
 GO
-PRINT N'L''opération de refactorisation de changement de nom avec la clé 9fd79af1-08f9-49f5-b62c-62999d640dfa est ignorée, l''élément [dbo].[User].[StreetNumber] (SqlSimpleColumn) ne sera pas renommé en RestaurantStreetNumber';
-
-
-GO
-PRINT N'L''opération de refactorisation de changement de nom avec la clé 38a8de9c-aacc-462e-9b4a-98062312989d est ignorée, l''élément [dbo].[User].[StreetName] (SqlSimpleColumn) ne sera pas renommé en RestaurantStreetName';
-
-
-GO
-PRINT N'L''opération de refactorisation de changement de nom avec la clé c78e16c1-d1f5-41cf-a6d5-577d405031b7 est ignorée, l''élément [dbo].[User].[PostalCode] (SqlSimpleColumn) ne sera pas renommé en RestaurantPostalCode';
-
-
-GO
-PRINT N'L''opération de refactorisation de changement de nom avec la clé d50a4e71-0a18-49f1-8966-ddf30fff8b23 est ignorée, l''élément [dbo].[User].[City] (SqlSimpleColumn) ne sera pas renommé en RestaurantCity';
-
-
-GO
 PRINT N'Création de Table [dbo].[ClosedDayException]...';
 
 
@@ -120,6 +104,7 @@ CREATE TABLE [dbo].[Reservation] (
     [NumberOfPeople]  INT            NOT NULL,
     [SpecialRequest]  NVARCHAR (500) NULL,
     [CreatedAt]       DATETIME       NOT NULL,
+    [IsValidate]      BIT            NOT NULL,
     PRIMARY KEY CLUSTERED ([Id] ASC),
     CONSTRAINT [UQ_Reservation_Table_ReservationDate] UNIQUE NONCLUSTERED ([TableId] ASC, [ReservationDate] ASC),
     CONSTRAINT [UQ_Reservation_User_Table_ReservationDate] UNIQUE NONCLUSTERED ([UserId] ASC, [TableId] ASC, [ReservationDate] ASC)
@@ -132,20 +117,21 @@ PRINT N'Création de Table [dbo].[Restaurant]...';
 
 GO
 CREATE TABLE [dbo].[Restaurant] (
-    [Id]             BIGINT         IDENTITY (1, 1) NOT NULL,
-    [UserId]         BIGINT         NOT NULL,
-    [RestaurantName] NVARCHAR (200) NOT NULL,
-    [StreetNumber]   NVARCHAR (10)  NULL,
-    [StreetName]     NVARCHAR (200) NULL,
-    [PostalCode]     NVARCHAR (10)  NULL,
-    [City]           NVARCHAR (100) NULL,
-    [Latitude]       DECIMAL (9, 6) NULL,
-    [Longitude]      DECIMAL (9, 6) NULL,
-    [Phone]          NVARCHAR (15)  NULL,
-    [CuisineType]    NVARCHAR (100) NULL,
-    [PaymentMethods] NVARCHAR (200) NULL,
-    [Description]    NVARCHAR (MAX) NULL,
-    [CreatedAt]      DATETIME       NOT NULL,
+    [Id]                        BIGINT         IDENTITY (1, 1) NOT NULL,
+    [UserId]                    BIGINT         NOT NULL,
+    [RestaurantName]            NVARCHAR (200) NOT NULL,
+    [StreetNumber]              NVARCHAR (10)  NULL,
+    [StreetName]                NVARCHAR (200) NULL,
+    [PostalCode]                NVARCHAR (10)  NULL,
+    [City]                      NVARCHAR (100) NULL,
+    [Latitude]                  DECIMAL (9, 6) NULL,
+    [Longitude]                 DECIMAL (9, 6) NULL,
+    [Phone]                     NVARCHAR (15)  NULL,
+    [CuisineType]               NVARCHAR (100) NULL,
+    [PaymentMethods]            NVARCHAR (200) NULL,
+    [Description]               NVARCHAR (MAX) NULL,
+    [CreatedAt]                 DATETIME       NOT NULL,
+    [IsAutoValidateReservation] BIT            NOT NULL,
     PRIMARY KEY CLUSTERED ([Id] ASC)
 );
 
@@ -237,12 +223,30 @@ ALTER TABLE [dbo].[Reservation]
 
 
 GO
+PRINT N'Création de Contrainte par défaut contrainte sans nom sur [dbo].[Reservation]...';
+
+
+GO
+ALTER TABLE [dbo].[Reservation]
+    ADD DEFAULT 0 FOR [IsValidate];
+
+
+GO
 PRINT N'Création de Contrainte par défaut contrainte sans nom sur [dbo].[Restaurant]...';
 
 
 GO
 ALTER TABLE [dbo].[Restaurant]
     ADD DEFAULT GETDATE() FOR [CreatedAt];
+
+
+GO
+PRINT N'Création de Contrainte par défaut contrainte sans nom sur [dbo].[Restaurant]...';
+
+
+GO
+ALTER TABLE [dbo].[Restaurant]
+    ADD DEFAULT 0 FOR [IsAutoValidateReservation];
 
 
 GO
@@ -402,26 +406,6 @@ BEGIN
     DELETE FROM [ClosedDayException]
     WHERE ExceptionDateEnd < GETDATE();
 END
-GO
--- Étape de refactorisation pour mettre à jour le serveur cible avec des journaux de transactions déployés
-
-IF OBJECT_ID(N'dbo.__RefactorLog') IS NULL
-BEGIN
-    CREATE TABLE [dbo].[__RefactorLog] (OperationKey UNIQUEIDENTIFIER NOT NULL PRIMARY KEY)
-    EXEC sp_addextendedproperty N'microsoft_database_tools_support', N'refactoring log', N'schema', N'dbo', N'table', N'__RefactorLog'
-END
-GO
-IF NOT EXISTS (SELECT OperationKey FROM [dbo].[__RefactorLog] WHERE OperationKey = '9fd79af1-08f9-49f5-b62c-62999d640dfa')
-INSERT INTO [dbo].[__RefactorLog] (OperationKey) values ('9fd79af1-08f9-49f5-b62c-62999d640dfa')
-IF NOT EXISTS (SELECT OperationKey FROM [dbo].[__RefactorLog] WHERE OperationKey = '38a8de9c-aacc-462e-9b4a-98062312989d')
-INSERT INTO [dbo].[__RefactorLog] (OperationKey) values ('38a8de9c-aacc-462e-9b4a-98062312989d')
-IF NOT EXISTS (SELECT OperationKey FROM [dbo].[__RefactorLog] WHERE OperationKey = 'c78e16c1-d1f5-41cf-a6d5-577d405031b7')
-INSERT INTO [dbo].[__RefactorLog] (OperationKey) values ('c78e16c1-d1f5-41cf-a6d5-577d405031b7')
-IF NOT EXISTS (SELECT OperationKey FROM [dbo].[__RefactorLog] WHERE OperationKey = 'd50a4e71-0a18-49f1-8966-ddf30fff8b23')
-INSERT INTO [dbo].[__RefactorLog] (OperationKey) values ('d50a4e71-0a18-49f1-8966-ddf30fff8b23')
-
-GO
-
 GO
 PRINT N'Vérification de données existantes par rapport aux nouvelles contraintes';
 

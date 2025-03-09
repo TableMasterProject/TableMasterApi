@@ -8,6 +8,7 @@
         public DateTime ReservationDate { get; set; }
         public int NumberOfPeople { get; set; }
         public string SpecialRequest { get; set; }
+        public Boolean IsValidate { get; set; }
     }
     public class ReservationOut : ReservationIn
     {

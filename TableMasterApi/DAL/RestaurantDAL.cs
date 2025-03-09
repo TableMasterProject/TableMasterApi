@@ -21,20 +21,7 @@ namespace TableMasterApi.DAL
         {
             var query = @"
                 SELECT
-                    R.Id, 
-                    R.UserId, 
-                    R.RestaurantName, 
-                    R.StreetNumber, 
-                    R.StreetName, 
-                    R.PostalCode, 
-                    R.City, 
-                    R.Latitude, 
-                    R.Longitude, 
-                    R.Phone, 
-                    R.CuisineType, 
-                    R.PaymentMethods, 
-                    R.Description, 
-                    R.CreatedAt,
+                    R.*,
                     ROUND(
                         6371000 * 
                         ACOS(
@@ -96,21 +83,21 @@ namespace TableMasterApi.DAL
                             INSERT INTO [Restaurant] 
                                 (UserId, RestaurantName, StreetNumber, StreetName, 
                                 PostalCode, City, Latitude, Longitude, Phone, 
-                                CuisineType, PaymentMethods, Description) 
+                                CuisineType, PaymentMethods, Description, IsAutoValidateReservation) 
                             OUTPUT 
                                 INSERTED.Id, INSERTED.UserId, INSERTED.RestaurantName, INSERTED.StreetNumber,INSERTED.StreetName, 
                                 INSERTED.PostalCode, INSERTED.City, INSERTED.Latitude, INSERTED.Longitude, INSERTED.Phone, 
-                                INSERTED.CuisineType, INSERTED.PaymentMethods, INSERTED.Description, INSERTED.CreatedAt 
+                                INSERTED.CuisineType, INSERTED.PaymentMethods, INSERTED.Description, INSERTED.CreatedAt, INSERTED.IsAutoValidateReservation
                             VALUES 
                                 (@UserId, @RestaurantName, @StreetNumber, @StreetName, 
                                 @PostalCode, @City, @Latitude, @Longitude, @Phone, 
-                                @CuisineType, @PaymentMethods, @Description)";
+                                @CuisineType, @PaymentMethods, @Description, @IsAutoValidateReservation)";
 
                 var insertedRestaurant = await connection.QuerySingleAsync<RestaurantOut>(query, new
                 {
                     UserId = idUser,restaurant.RestaurantName,restaurant.StreetNumber,restaurant.StreetName,
                     restaurant.PostalCode,restaurant.City,restaurant.Latitude,restaurant.Longitude, restaurant.Phone,
-                    restaurant.CuisineType, restaurant.PaymentMethods, restaurant.Description
+                    restaurant.CuisineType, restaurant.PaymentMethods, restaurant.Description, restaurant.IsAutoValidateReservation
                 });
                 insertedRestaurant.DailyActivitys = [];
                 insertedRestaurant.ClosedDayExceptions = [];
@@ -130,11 +117,11 @@ namespace TableMasterApi.DAL
                             UPDATE [Restaurant] 
                                 SET RestaurantName = @RestaurantName, StreetNumber = @StreetNumber, StreetName = @StreetName, 
                                 PostalCode = @PostalCode, City = @City, Latitude = @Latitude, Longitude = @Longitude, Phone = @Phone,
-                                CuisineType = @CuisineType, PaymentMethods = @PaymentMethods, Description = @Description
+                                CuisineType = @CuisineType, PaymentMethods = @PaymentMethods, Description = @Description, IsAutoValidateReservation = @IsAutoValidateReservation
                             OUTPUT 
                                 INSERTED.Id, INSERTED.UserId, INSERTED.RestaurantName, INSERTED.StreetNumber,INSERTED.StreetName, 
                                 INSERTED.PostalCode, INSERTED.City, INSERTED.Latitude, INSERTED.Longitude, INSERTED.Phone, 
-                                INSERTED.CuisineType, INSERTED.PaymentMethods, INSERTED.Description, INSERTED.CreatedAt 
+                                INSERTED.CuisineType, INSERTED.PaymentMethods, INSERTED.Description, INSERTED.CreatedAt, INSERTED.IsAutoValidateReservation
                             WHERE Id = @Id and UserId = @UserId";
                 var updatedRestaurant = await connection.QuerySingleAsync<RestaurantOut>(query, new
                 {
@@ -150,7 +137,8 @@ namespace TableMasterApi.DAL
                     restaurant.Phone,
                     restaurant.CuisineType,
                     restaurant.PaymentMethods,
-                    restaurant.Description
+                    restaurant.Description,
+                    restaurant.IsAutoValidateReservation
                 });
                 updatedRestaurant.DailyActivitys = [];
                 updatedRestaurant.ClosedDayExceptions = [];

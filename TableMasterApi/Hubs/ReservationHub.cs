@@ -7,6 +7,7 @@ namespace TableMasterApi.Hubs
     {
         public const string SEND_AT_ReceiveReservationCreated = "ReceiveReservationCreated";
         public const string SEND_AT_ReceiveReservationDeleted = "ReceiveReservationDeleted";
+        public const string SEND_AT_ReceiveReservationValidate = "ReceiveReservationValidate";
         public const string RESTAURANT_GROUP_PREFIX = "restaurant_";
         // Rejoindre un groupe (restaurant)
         public async Task JoinRestaurantGroup(string restaurantId)
