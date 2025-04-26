@@ -14,6 +14,13 @@ namespace TableMasterApi.DAL
             _config = config;
         }
 
+        public async Task<DailyActivityOut?> GetByIdAsync(long id)
+        {
+            var query = "SELECT * FROM DailyActivity WHERE Id = @Id";
+            using var connection = new SqlConnection(_config.ConnectionString);
+            return await connection.QueryFirstOrDefaultAsync<DailyActivityOut>(query, new { Id = id });
+        }
+
         public async Task<IEnumerable<DailyActivityOut>> GetByRestaurantAsync(long restaurantId)
         {
             var query = "SELECT * FROM DailyActivity WHERE RestaurantId = @RestaurantId ORDER BY DayOfWeek, StartTime";

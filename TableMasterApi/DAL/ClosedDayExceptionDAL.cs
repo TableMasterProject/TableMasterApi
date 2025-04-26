@@ -13,6 +13,14 @@ namespace TableMasterApi.DAL
             _config = config;
         }
 
+        public async Task<ClosedDayExceptionOut?> GetByIdAsync(long id)
+        {
+            var query = "SELECT * FROM ClosedDayException WHERE Id = @Id";
+            using var connection = new SqlConnection(_config.ConnectionString);
+            return await connection.QueryFirstOrDefaultAsync<ClosedDayExceptionOut>(query, new { Id = id });
+        }
+
+
         public async Task<IEnumerable<ClosedDayExceptionOut>> GetByRestaurantAsync(long restaurantId)
         {
             var query = "SELECT * FROM ClosedDayException WHERE RestaurantId = @RestaurantId ORDER BY ExceptionDateBegin";

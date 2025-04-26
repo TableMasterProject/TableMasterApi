@@ -4,6 +4,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 using TableMasterApi.DAL;
 using TableMasterApi.Model;
+using TableMasterApi.Service;
 
 namespace TableMasterApi.Controllers
 {
@@ -12,10 +13,15 @@ namespace TableMasterApi.Controllers
     public class ClosedDayExceptionController : ControllerBase
     {
         private readonly ClosedDayExceptionDAL _dal;
+        private readonly RestaurantDAL _RestaurantDAL;
 
-        public ClosedDayExceptionController(IOptions<ConfigPerso> config)
+        private readonly JwtService _jwtService;
+
+        public ClosedDayExceptionController(IOptions<ConfigPerso> config, JwtService jwtService)
         {
+            _jwtService = jwtService;
             _dal = new ClosedDayExceptionDAL(config.Value);
+            _RestaurantDAL = new RestaurantDAL(config.Value);
         }
 
         [Authorize]
@@ -61,10 +67,23 @@ namespace TableMasterApi.Controllers
         {
             try
             {
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
                 if (input == null)
                 {
                     return BadRequest();
                 }
+                var tableBefore = await _dal.GetByIdAsync(id);
+                if (tableBefore == null)
+                    return NotFound("La DailyActivity n'existe pas");
+
+                var restaurant = await _RestaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
+
+                if (restaurant == null)
+                    return NotFound("Le restaurant n'existe pas");
+                if (restaurant.UserId != idUserToken)
+                    return Unauthorized("Vous n'êtes pas autorisé à modifier cette DailyActivity");
 
                 var result = await _dal.UpdateAsync(id, input);
                 if (result == null) return NotFound();
@@ -83,6 +102,20 @@ namespace TableMasterApi.Controllers
         {
             try
             {
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
+                var tableBefore = await _dal.GetByIdAsync(id);
+                if (tableBefore == null)
+                    return NotFound("La DailyActivity n'existe pas");
+
+                var restaurant = await _RestaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
+
+                if (restaurant == null)
+                    return NotFound("Le restaurant n'existe pas");
+                if (restaurant.UserId != idUserToken)
+                    return Unauthorized("Vous n'êtes pas autorisé à modifier cette DailyActivity");
+
                 var success = await _dal.DeleteAsync(id);
                 return success ? Ok() : NotFound();
             }
