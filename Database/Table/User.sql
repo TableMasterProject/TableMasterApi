@@ -7,4 +7,5 @@
     [LastName] NVARCHAR(100) NOT NULL,               -- Nom de l'utilisateur
     [AccountType] TINYINT NOT NULL DEFAULT 0,        -- Type de compte (0 = standard, 1 = admin, etc.)
     [CreatedAt] DATETIME NOT NULL DEFAULT GETDATE()  -- Date de création avec valeur par défaut
+ 
 )

@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
+using System.Text;
 using TableMasterApi.DAL;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
@@ -45,9 +47,21 @@ namespace TableMasterApi.Controllers
                     return StatusCode(404, "Mot de passe incorecte");
                 }
 
+                string refreshToken = _jwtService.GenerateRefreshToken();
+                string hashedRefreshToken;
+                using (var sha256 = SHA256.Create())
+                {
+                    var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(refreshToken));
+                    hashedRefreshToken = Convert.ToBase64String(bytes);
+                }
+
+                await _userDAL.SaveRefreshToken(user.Id, hashedRefreshToken, DateTime.Now.AddDays(30));
+
                 LoginUserOut loginUserOut = new LoginUserOut();
                 loginUserOut.User = user;
-                loginUserOut.Token = _jwtService.GenerateToken(user.Id);
+                loginUserOut.AccessToken = _jwtService.GenerateAccessToken(user.Id);
+                loginUserOut.RefreshToken = hashedRefreshToken;
+                
 
                 return Ok(loginUserOut);
             }
@@ -55,6 +69,43 @@ namespace TableMasterApi.Controllers
             {
                 return StatusCode(500, e.Message);
             }
+        }
+
+        [HttpPost("refresh")]
+        public async Task<ActionResult<LoginUserOut>> Refresh([FromBody] LoginTokenIn model)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(model.RefreshToken)) return BadRequest();
+
+                // 1. On hashe le token reçu pour le comparer à la BDD
+                string hashedRefreshToken;
+                using (var sha256 = SHA256.Create())
+                {
+                    var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(model.RefreshToken));
+                    hashedRefreshToken = Convert.ToBase64String(bytes);
+                }
+
+                // 2. On cherche l'utilisateur associé
+                var userId = await _userDAL.GetUserIdByRefreshToken(hashedRefreshToken);
+
+                if (userId == null) return Unauthorized("Session expirée ou invalide");
+
+                // 3. On récupère les infos utilisateur pour renvoyer l'objet complet
+                var user = await _userDAL.GetUserById(userId.Value);
+                if (user == null) return NotFound();
+
+                // 4. On génère un nouvel AccessToken (le refresh reste le même ou on peut le faire tourner)
+                var newAccessToken = _jwtService.GenerateAccessToken(user.Id);
+
+                return Ok(new LoginUserOut
+                {
+                    User = user,
+                    AccessToken = newAccessToken,
+                    RefreshToken = model.RefreshToken // On réutilise le même
+                });
+            }
+            catch (Exception e) { return StatusCode(500, e.Message); }
         }
     }
 }

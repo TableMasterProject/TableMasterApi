@@ -121,6 +121,39 @@ namespace TableMasterApi.DAL
             }
         }
 
+        public async Task<bool> SaveRefreshToken(long userId, string hashedToken, DateTime expiry)
+        {
+            using (var connection = new SqlConnection(_config.ConnectionString))
+            {
+                connection.Open();
+
+                var query = @"INSERT INTO UserRefreshTokens (UserId, TokenHash, ExpiryDate) 
+                     VALUES (@UserId, @TokenHash, @ExpiryDate)";
+
+                // Execute la requête de suppression
+                var rowsAffected = await connection.ExecuteAsync(query, new { UserId = userId, TokenHash = hashedToken, ExpiryDate = expiry });
+
+                // Si une ligne a été affectée, la suppression a réussi
+                return rowsAffected > 0;
+            }
+        }
+
+        public async Task<long?> GetUserIdByRefreshToken(string hashedToken)
+        {
+            using (var connection = new SqlConnection(_config.ConnectionString))
+            {
+                connection.Open();
+
+                string query = @"SELECT UserId FROM UserRefreshTokens 
+                     WHERE TokenHash = @TokenHash AND ExpiryDate > GETDATE()";
+
+                // Execute la requête
+                IEnumerable<long> IEnumerableuser = await connection.QueryAsync<long>(query, new { TokenHash = hashedToken });
+                long? userId = IEnumerableuser.FirstOrDefault();
+                return userId;
+            }
+        }
+
 
     }
 }
