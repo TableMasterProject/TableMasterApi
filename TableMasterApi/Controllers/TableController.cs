@@ -146,5 +146,36 @@ namespace TableMasterApi.Controllers
                 return StatusCode(500, e.Message);
             }
         }
+
+        [Authorize]
+        [HttpPost("Restaurant/{Id}/Bulk")]
+        public async Task<ActionResult<IEnumerable<TableEntityOut>>> ReplaceTables(long Id, [FromBody] List<TableEntityIn> tables)
+        {
+            try
+            {
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
+                if (tables == null || !tables.Any())
+                    return BadRequest("La liste des tables est vide.");
+
+                // Vérification de sécurité : le restaurant appartient-il à l'utilisateur ?
+                var restaurant = await _RestaurantDAL.GetRestaurantById(Id);
+                if (restaurant == null)
+                    return NotFound("Le restaurant n'existe pas");
+
+                if (restaurant.UserId != idUserToken)
+                    return Unauthorized("Vous n'êtes pas autorisé à modifier les tables de ce restaurant");
+
+                // Appel de la méthode DAL
+                var results = await _tableDAL.ReplaceTablesAsync(Id, tables);
+
+                return Ok(results);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, e.Message);
+            }
+        }
     }
 }

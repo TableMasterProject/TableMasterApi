@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 using System.Collections.Generic;
+using System.Security.Cryptography;
+using System.Text;
 using TableMasterApi.DAL;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
@@ -123,7 +125,7 @@ public class UserController : ControllerBase
 
     // POST api/user -> Ajouter un nouvel utilisateur
     [HttpPost]
-    public async Task<ActionResult<UserOut>> AddUser([FromBody] UserIn user)
+    public async Task<ActionResult<LoginUserOut>> AddUser([FromBody] UserIn user)
     {
         try
         {
@@ -133,7 +135,24 @@ public class UserController : ControllerBase
             }
 
             var addedUser = await _userDAL.AddUser(user);
-            return Ok(addedUser);
+
+            string refreshToken = _jwtService.GenerateRefreshToken();
+            string hashedRefreshToken;
+            using (var sha256 = SHA256.Create())
+            {
+                var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(refreshToken));
+                hashedRefreshToken = Convert.ToBase64String(bytes);
+            }
+
+            await _userDAL.SaveRefreshToken(addedUser.Id, hashedRefreshToken, DateTime.Now.AddDays(30));
+
+            LoginUserOut loginUserOut = new LoginUserOut();
+            loginUserOut.User = addedUser;
+            loginUserOut.AccessToken = _jwtService.GenerateAccessToken(addedUser.Id);
+            loginUserOut.RefreshToken = hashedRefreshToken;
+
+
+            return Ok(loginUserOut);
         }
         catch (SqlException e)
         {

@@ -13,6 +13,7 @@ namespace TableMasterApi.Controllers
     {
         private readonly RestaurantDAL _restaurantDAL;
         private readonly JwtService _jwtService;
+
         public RestaurantController(JwtService jwtService, IOptions<ConfigPerso> config)
         {
             _jwtService = jwtService;
@@ -24,11 +25,18 @@ namespace TableMasterApi.Controllers
         [Authorize]
         public async Task<ActionResult<ICollection<RestaurantOut>>> GetAll([FromQuery] SearchRestaurant search)
         {
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            try
+            {
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-            var restaurants = await _restaurantDAL.GetRestaurants(search);
-            return Ok(restaurants);
+                var restaurants = await _restaurantDAL.GetRestaurants(search);
+                return Ok(restaurants);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, e.Message);
+            }
         }
 
         // GET: api/Restaurant/{id}
@@ -36,14 +44,21 @@ namespace TableMasterApi.Controllers
         [Authorize]
         public async Task<ActionResult<RestaurantOut>> Get(long id)
         {
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            try
+            {
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-            var restaurant = await _restaurantDAL.GetRestaurantById(id);
-            if (restaurant == null)
-                return NotFound("Restaurant not found.");
+                var restaurant = await _restaurantDAL.GetRestaurantById(id);
+                if (restaurant == null)
+                    return NotFound("Restaurant not found.");
 
-            return Ok(restaurant);
+                return Ok(restaurant);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, e.Message);
+            }
         }
 
         // POST: api/Restaurant
@@ -51,16 +66,23 @@ namespace TableMasterApi.Controllers
         [Authorize]
         public async Task<ActionResult<RestaurantOut>> Post([FromBody] RestaurantIn restaurant)
         {
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
-
-            if (restaurant == null)
+            try
             {
-                return BadRequest();
-            }
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-            var createdRestaurant = await _restaurantDAL.PostRestaurantAsync(idUserToken, restaurant);
-            return Ok(createdRestaurant);
+                if (restaurant == null)
+                {
+                    return BadRequest("Données du restaurant invalides.");
+                }
+
+                var createdRestaurant = await _restaurantDAL.PostRestaurantAsync(idUserToken, restaurant);
+                return Ok(createdRestaurant);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, e.Message);
+            }
         }
 
         // PUT: api/Restaurant/{id}
@@ -68,17 +90,30 @@ namespace TableMasterApi.Controllers
         [Authorize]
         public async Task<ActionResult<RestaurantOut>> Put(long id, [FromBody] RestaurantIn restaurant)
         {
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
-
-            if (restaurant == null)
+            try
             {
-                return BadRequest();
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
+                if (restaurant == null)
+                {
+                    return BadRequest("Données de mise à jour invalides.");
+                }
+
+                // Ici tu pourrais ajouter une vérification : 
+                // var existing = await _restaurantDAL.GetRestaurantById(id);
+                // if (existing.UserId != idUserToken) return Unauthorized();
+
+                var put = await _restaurantDAL.putRestaurant(idUserToken, id, restaurant);
+                if (put == null)
+                    return NotFound("Restaurant non trouvé ou modification impossible.");
+
+                return Ok(put);
             }
-
-            var put = await _restaurantDAL.putRestaurant(idUserToken, id, restaurant);
-
-            return Ok(put);
+            catch (Exception e)
+            {
+                return StatusCode(500, e.Message);
+            }
         }
 
         // DELETE: api/Restaurant/{id}
@@ -86,14 +121,21 @@ namespace TableMasterApi.Controllers
         [Authorize]
         public async Task<ActionResult<bool>> Delete(long id)
         {
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            try
+            {
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-            var deleted = await _restaurantDAL.DeleteRestaurant(idUserToken, id);
-            if (!deleted)
-                return NotFound("Restaurant not found.");
+                var deleted = await _restaurantDAL.DeleteRestaurant(idUserToken, id);
+                if (!deleted)
+                    return NotFound("Restaurant not found.");
 
-            return Ok(deleted);
+                return Ok(deleted);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, e.Message);
+            }
         }
     }
 }

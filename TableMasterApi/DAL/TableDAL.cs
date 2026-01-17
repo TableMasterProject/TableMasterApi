@@ -112,5 +112,58 @@ namespace TableMasterApi.DAL
         }
 
 
+        public async Task<IEnumerable<TableEntityOut>> ReplaceTablesAsync(long restaurantId, IEnumerable<TableEntityIn> tables)
+        {
+            var deleteQuery = "DELETE FROM [TableMaster].[dbo].[TableEntity] WHERE [RestaurantId] = @RestaurantId;";
+
+            var insertQuery = @"
+        INSERT INTO [TableMaster].[dbo].[TableEntity] ([RestaurantId], [TableNumber], [NumberOfSeats])
+        OUTPUT 
+            INSERTED.Id, 
+            INSERTED.[RestaurantId],
+            INSERTED.[TableNumber],
+            INSERTED.[NumberOfSeats],
+            INSERTED.CreatedAt
+        VALUES (@RestaurantId, @TableNumber, @NumberOfSeats);";
+
+            using (var connection = new SqlConnection(_config.ConnectionString))
+            {
+                await connection.OpenAsync();
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        // 1. Supprimer les anciennes tables
+                        await connection.ExecuteAsync(deleteQuery, new { RestaurantId = restaurantId }, transaction);
+
+                        // 2. Insérer les nouvelles tables
+                        var createdTables = new List<TableEntityOut>();
+                        foreach (var table in tables)
+                        {
+                            // On force l'ID du restaurant pour chaque table de la liste
+                            var result = await connection.QuerySingleAsync<TableEntityOut>(insertQuery, new
+                            {
+                                RestaurantId = restaurantId,
+                                table.TableNumber,
+                                table.NumberOfSeats
+                            }, transaction);
+
+                            createdTables.Add(result);
+                        }
+
+                        // 3. Valider l'opération
+                        transaction.Commit();
+                        return createdTables;
+                    }
+                    catch (Exception)
+                    {
+                        transaction.Rollback();
+                        throw;
+                    }
+                }
+            }
+        }
+
+
     }
 }
