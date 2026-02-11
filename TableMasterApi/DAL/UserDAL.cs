@@ -153,6 +153,34 @@ namespace TableMasterApi.DAL
                 return userId;
             }
         }
+        
+        public async Task<bool> DeleteRefreshToken(string hashedToken)
+        {
+            using (var connection = new SqlConnection(_config.ConnectionString))
+            {
+                await connection.OpenAsync();
+
+                var query = "DELETE FROM UserRefreshTokens WHERE TokenHash = @TokenHash";
+
+                var rowsAffected = await connection.ExecuteAsync(query, new { TokenHash = hashedToken });
+
+                return rowsAffected > 0;
+            }
+        }
+
+        public async Task<bool> DeleteAllRefreshTokensForUser(long userId)
+        {
+            using (var connection = new SqlConnection(_config.ConnectionString))
+            {
+                await connection.OpenAsync();
+
+                var query = "DELETE FROM UserRefreshTokens WHERE UserId = @UserId";
+
+                var rowsAffected = await connection.ExecuteAsync(query, new { UserId = userId });
+
+                return rowsAffected > 0;
+            }
+        }
 
 
     }
