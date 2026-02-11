@@ -185,6 +185,19 @@ CREATE TABLE [dbo].[User] (
     UNIQUE NONCLUSTERED ([Email] ASC)
 );
 
+GO
+PRINT N'Création de Table [dbo].[UserRefreshTokens]...';
+
+GO
+CREATE TABLE [dbo].[UserRefreshTokens] (
+                                           [Id]         BIGINT         IDENTITY (1, 1) NOT NULL,
+                                           [UserId]     BIGINT         NOT NULL,
+                                           [TokenHash]  NVARCHAR (MAX) NOT NULL,
+                                           [ExpiryDate] DATETIME       NOT NULL,
+                                           [CreatedAt]  DATETIME       NOT NULL,
+                                           [DeviceInfo] NVARCHAR (255) NULL,
+                                           PRIMARY KEY CLUSTERED ([Id] ASC)
+);
 
 GO
 PRINT N'Création de Contrainte par défaut contrainte sans nom sur [dbo].[ClosedDayException]...';
@@ -383,6 +396,12 @@ GO
 ALTER TABLE [dbo].[Review] WITH NOCHECK
     ADD CHECK ([Rating]>=(1) AND [Rating]<=(5));
 
+GO
+PRINT N'Création de Contrainte par défaut sur [dbo].[UserRefreshTokens]...';
+
+GO
+ALTER TABLE [dbo].[UserRefreshTokens]
+    ADD DEFAULT GETDATE() FOR [CreatedAt];
 
 GO
 PRINT N'Création de Déclencheur [dbo].[DeleteOldClosedDayExceptions]...';
