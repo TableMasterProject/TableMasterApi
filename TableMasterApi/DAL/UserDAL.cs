@@ -26,9 +26,16 @@ namespace TableMasterApi.DAL
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
-                var query = "SELECT Id, Email, Password, FirstName, LastName, AccountType, CreatedAt FROM [User] WHERE Id = @Id";
-                IEnumerable<UserOut> IEnumerableuser = await connection.QueryAsync<UserOut>(query, new { Id = id });
-                UserOut? user = IEnumerableuser.FirstOrDefault();
+                var query = @"
+                    SELECT 
+                        u.Id, u.Email, u.Password, u.FirstName, u.LastName, u.AccountType, u.CreatedAt,
+                        r.Id AS RestaurantId
+                    FROM [User] u
+                    LEFT JOIN [Restaurant] r ON u.Id = r.UserId
+                    WHERE u.Id = @Id";
+                
+                var result = await connection.QueryAsync<UserOut>(query, new { Id = id });
+                UserOut? user = result.FirstOrDefault();
                 return user;
             }
         }
@@ -38,9 +45,16 @@ namespace TableMasterApi.DAL
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
-                var query = "SELECT Id, Email, Password, FirstName, LastName, AccountType, CreatedAt FROM [User] WHERE Email = @Email";
-                IEnumerable<UserOut> IEnumerableuser = await connection.QueryAsync<UserOut>(query, new { Email = email });
-                UserOut? user = IEnumerableuser.FirstOrDefault();
+                var query = @"
+                    SELECT 
+                        u.Id, u.Email, u.Password, u.FirstName, u.LastName, u.AccountType, u.CreatedAt,
+                        r.Id AS RestaurantId
+                    FROM [User] u
+                    LEFT JOIN [Restaurant] r ON u.Id = r.UserId
+                    WHERE u.Email = @Email";
+                
+                var result = await connection.QueryAsync<UserOut>(query, new { Email = email });
+                UserOut? user = result.FirstOrDefault();
                 return user;
             }
         }

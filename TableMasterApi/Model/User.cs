@@ -13,7 +13,7 @@
     {
         public long Id { get; set; }
         public DateTime CreatedAt { get; set; }
-        public RestaurantOut? Restaurant { get; set; }
+        public long? RestaurantId { get; set; }
     }
 
 

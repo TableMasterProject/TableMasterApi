@@ -14,59 +14,71 @@ namespace TableMasterApi.DAL
             _config = config;
         }
 
-        public async Task<IEnumerable<ReservationOut>> GetReservationsByRestaurantAsync(long restaurantId, DateOnly reservationDate)
+        public async Task<IEnumerable<ReservationOut>> GetReservationsByRestaurantAsync(long restaurantId, DateOnly reservationDate, long? tableId = null)
         {
             var query = @"
                 SELECT 
-                R.Id,
-                R.UserId, 
-                R.TableId, 
-                R.RestaurantId, 
-                R.ReservationDate, 
-                R.NumberOfPeople, 
-                R.SpecialRequest, 
-                R.CreatedAt,
-                R.IsValidate,
-                U.Id AS Id,
-                U.FirstName, 
-                U.LastName, 
-                U.Email, 
-                U.Password, 
-                U.AccountType, 
-                U.CreatedAt,
-                T.Id AS Id,
-                T.RestaurantId, 
-                T.TableNumber, 
-                T.NumberOfSeats, 
-                T.CreatedAt
-            FROM [Reservation] R
-            JOIN [User] U ON R.UserId = U.Id
-            JOIN [TableEntity] T ON R.TableId = T.Id
-            WHERE 
-                T.RestaurantId = @RestaurantId
-                AND CONVERT(VARCHAR, R.ReservationDate, 23) = @ReservationDate
-            ORDER BY R.ReservationDate ASC;";
+                    R.Id, R.UserId, R.TableId, R.RestaurantId, R.ReservationDate, R.NumberOfPeople, 
+                    R.SpecialRequest, R.CreatedAt, R.IsValidate,
+                    U.Id AS Id, U.FirstName, U.LastName, U.Email, U.AccountType, U.CreatedAt,
+                    T.Id AS Id, T.RestaurantId, T.TableNumber, T.NumberOfSeats, T.CreatedAt
+                FROM [Reservation] R
+                JOIN [User] U ON R.UserId = U.Id
+                JOIN [TableEntity] T ON R.TableId = T.Id
+                WHERE 
+                    T.RestaurantId = @RestaurantId
+                    AND CAST(R.ReservationDate AS DATE) >= @ReservationDate
+                    AND R.IsValidate = 1
+                    AND (@TableId IS NULL OR T.Id = @TableId) -- Filtre optionnel
+                ORDER BY R.ReservationDate ASC;";
 
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
-                var reservations = await connection.QueryAsync<ReservationOut, UserOut, TableEntityOut, ReservationOut>(
+                return await connection.QueryAsync<ReservationOut, UserOut, TableEntityOut, ReservationOut>(
                     query,
-                    (reservation, user, table) =>
-                    {
+                    (reservation, user, table) => {
                         reservation.User = user;
                         reservation.Table = table;
                         return reservation;
                     },
-                    new
-                    {
+                    new {
                         RestaurantId = restaurantId,
-                        ReservationDate = reservationDate.ToString("yyyy-MM-dd") // Conversion en string
+                        ReservationDate = reservationDate.ToString("yyyy-MM-dd"),
+                        TableId = tableId // Dapper gère le null automatiquement
                     },
-                    splitOn: "Id,Id" // ✅ Correction ici
+                    splitOn: "Id,Id"
                 );
+            }
+        }
 
+        public async Task<IEnumerable<ReservationOut>> GetPendingReservationsAsync(long restaurantId, long? tableId = null)
+        {
+            var query = @"
+                SELECT 
+                    R.*, 
+                    U.Id AS Id, U.FirstName, U.LastName, U.Email, U.AccountType, U.CreatedAt,
+                    T.Id AS Id, T.RestaurantId, T.TableNumber, T.NumberOfSeats, T.CreatedAt
+                FROM [Reservation] R
+                JOIN [User] U ON R.UserId = U.Id
+                JOIN [TableEntity] T ON R.TableId = T.Id
+                WHERE 
+                    R.RestaurantId = @RestaurantId
+                    AND R.IsValidate = 0
+                    AND (@TableId IS NULL OR T.Id = @TableId) -- Filtre optionnel
+                ORDER BY R.ReservationDate ASC;";
 
-                return reservations;
+            using (var connection = new SqlConnection(_config.ConnectionString))
+            {
+                return await connection.QueryAsync<ReservationOut, UserOut, TableEntityOut, ReservationOut>(
+                    query,
+                    (reservation, user, table) => {
+                        reservation.User = user;
+                        reservation.Table = table;
+                        return reservation;
+                    },
+                    new { RestaurantId = restaurantId, TableId = tableId },
+                    splitOn: "Id,Id"
+                );
             }
         }
 
@@ -229,17 +241,16 @@ namespace TableMasterApi.DAL
                 return reservations.FirstOrDefault();
             }
         }
-        public async Task<TableEntityOut?> Delete(long idUser, long id)
+        public async Task<ReservationOut?> Delete(long id)
         {
-            var selectQuery = @"SELECT * FROM [Reservation] WHERE Id = @Id AND UserId = @UserId;";
-            var deleteQuery = @"DELETE FROM [Reservation] WHERE Id = @Id AND UserId = @UserId;";
+            var selectQuery = @"SELECT * FROM [Reservation] WHERE Id = @Id;";
+            var deleteQuery = @"DELETE FROM [Reservation] WHERE Id = @Id;";
 
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
-                var reservation = await connection.QueryFirstOrDefaultAsync<TableEntityOut>(selectQuery, new
+                var reservation = await connection.QueryFirstOrDefaultAsync<ReservationOut>(selectQuery, new
                 {
-                    Id = id,
-                    UserId = idUser
+                    Id = id
                 });
 
                 if (reservation == null)
@@ -247,8 +258,7 @@ namespace TableMasterApi.DAL
 
                 var affectedRows = await connection.ExecuteAsync(deleteQuery, new
                 {
-                    Id = id,
-                    UserId = idUser
+                    Id = id
                 });
 
                 return affectedRows > 0 ? reservation : null;

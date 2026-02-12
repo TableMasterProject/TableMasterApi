@@ -33,7 +33,7 @@ namespace TableMasterApi.Controllers
 
         [Authorize]
         [HttpGet("Restaurant/{Id}")]
-        public async Task<ActionResult<ReservationOut>> GetReservations(long Id, [FromQuery] DateOnly reservationDate)
+        public async Task<ActionResult<IEnumerable<ReservationOut>>> GetReservations(long Id, [FromQuery] DateOnly reservationDate, [FromQuery] long? tableId = null)
         {
             try
             {
@@ -44,7 +44,7 @@ namespace TableMasterApi.Controllers
                 {
                     return BadRequest();
                 }
-                var resultes = await _reservationDAL.GetReservationsByRestaurantAsync(Id, reservationDate);
+                var resultes = await _reservationDAL.GetReservationsByRestaurantAsync(Id, reservationDate, tableId);
 
                 if (resultes == null)
                     return NotFound("Aucune réservation trouvée.");
@@ -57,6 +57,28 @@ namespace TableMasterApi.Controllers
             }
 
         }
+        [Authorize]
+        [HttpGet("Restaurant/{Id}/Pending")]
+        public async Task<ActionResult<IEnumerable<ReservationOut>>> GetPendingReservations(long Id, [FromQuery] long? tableId = null)
+        {
+            try
+            {
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+                
+                var restaurant = await _restaurantDAL.GetRestaurantById(Id);
+                if (restaurant == null) return NotFound("Restaurant non trouvé.");
+                if (restaurant.UserId != idUserToken) return Unauthorized();
+
+                var results = await _reservationDAL.GetPendingReservationsAsync(Id, tableId);
+                return Ok(results);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, e.Message);
+            }
+        }
+        
         [Authorize]
         [HttpGet("My")]
         public async Task<ActionResult<ReservationOut>> GetMyReservations([FromQuery] SearchReservations searchReservations)
@@ -173,7 +195,7 @@ namespace TableMasterApi.Controllers
                 var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-                var deleted = await _reservationDAL.Delete(idUserToken, id);
+                var deleted = await _reservationDAL.Delete(id);
                 if (deleted == null )
                     return NotFound("Restaurant not found.");
 
