@@ -136,44 +136,31 @@ namespace TableMasterApi.DAL
         internal async Task<IEnumerable<ReservationOut>> GetMyReservations(long idUserToken, SearchReservations searchReservations)
         {
             var query = @"
-                SELECT 
-                R.Id,
-                R.UserId, 
-                R.TableId, 
-                R.RestaurantId, 
-                R.ReservationDate, 
-                R.NumberOfPeople, 
-                R.SpecialRequest, 
-                R.CreatedAt,
-                R.IsValidate,
-                U.Id AS Id,
-                U.FirstName, 
-                U.LastName, 
-                U.Email, 
-                U.Password, 
-                U.AccountType, 
-                U.CreatedAt,
-                T.Id AS Id,
-                T.RestaurantId, 
-                T.TableNumber, 
-                T.NumberOfSeats, 
-                T.CreatedAt
-            FROM [Reservation] R
-            JOIN [User] U ON R.UserId = U.Id
-            JOIN [TableEntity] T ON R.TableId = T.Id
-            WHERE 
-                R.UserId = @UserId
-            ORDER BY R.ReservationDate ASC
-            OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
+        SELECT 
+            R.Id, R.UserId, R.TableId, R.RestaurantId, R.ReservationDate, R.NumberOfPeople, R.SpecialRequest, R.CreatedAt, R.IsValidate,
+            U.Id, U.FirstName, U.LastName, U.Email, U.AccountType, U.CreatedAt,
+            T.Id, T.RestaurantId, T.TableNumber, T.NumberOfSeats, T.CreatedAt,
+            Res.Id, Res.RestaurantName, Res.StreetNumber, Res.StreetName, Res.PostalCode, Res.City, Res.CuisineType -- Ajout des colonnes Restaurant
+        FROM [Reservation] R
+        JOIN [User] U ON R.UserId = U.Id
+        JOIN [TableEntity] T ON R.TableId = T.Id
+        JOIN [Restaurant] Res ON R.RestaurantId = Res.Id -- Nouveau JOIN
+        WHERE 
+            R.UserId = @UserId
+        ORDER BY R.ReservationDate ASC
+        OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
 
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
-                var reservations = await connection.QueryAsync<ReservationOut, UserOut, TableEntityOut, ReservationOut>(
+                // On ajoute RestaurantOut dans la liste des types génériques
+                // Ordre : <T1, T2, T3, T4, TReturn>
+                var reservations = await connection.QueryAsync<ReservationOut, UserOut, TableEntityOut, RestaurantOut, ReservationOut>(
                     query,
-                    (reservation, user, table) =>
+                    (reservation, user, table, restaurant) =>
                     {
                         reservation.User = user;
                         reservation.Table = table;
+                        reservation.Restaurant = restaurant; // On lie le restaurant
                         return reservation;
                     },
                     new
@@ -182,9 +169,8 @@ namespace TableMasterApi.DAL
                         searchReservations.Offset,
                         searchReservations.PageSize,
                     },
-                    splitOn: "Id,Id" // ✅ Correction ici
+                    splitOn: "Id,Id,Id" // ✅ On ajoute un "Id" pour marquer le début du Restaurant
                 );
-
 
                 return reservations;
             }

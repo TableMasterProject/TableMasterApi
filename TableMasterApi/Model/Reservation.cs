@@ -16,6 +16,7 @@
         public DateTime CreatedAt { get; set; }
         public UserOut User { get; set; }
         public TableEntityOut Table { get; set; }
+        public RestaurantOut Restaurant { get; set; }
     }
 
 }
