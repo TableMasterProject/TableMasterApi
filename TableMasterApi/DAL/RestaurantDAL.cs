@@ -30,7 +30,16 @@ namespace TableMasterApi.DAL
                             SIN(RADIANS(@Latitude)) * SIN(RADIANS(R.Latitude))
                         ),
                         0
-                    ) AS Distance,
+                    ) AS DistanceForSearch,
+                    ROUND(
+                        6371000 * 
+                        ACOS(
+                            COS(RADIANS(@CurrentUserLatitude)) * COS(RADIANS(R.Latitude)) * 
+                            COS(RADIANS(R.Longitude) - RADIANS(@CurrentUserLongitude)) + 
+                            SIN(RADIANS(@CurrentUserLatitude)) * SIN(RADIANS(R.Latitude))
+                        ),
+                        0
+                    ) AS DistanceWithUser,
                     ROUND(
                         (SELECT AVG(CAST(Rv.Rating AS DECIMAL(10, 2)))
                          FROM [Review] Rv
@@ -45,7 +54,7 @@ namespace TableMasterApi.DAL
                     (@CuisineType IS NULL OR R.CuisineType LIKE '%'+@CuisineType+'%') AND
                     (@PaymentMethods IS NULL OR R.PaymentMethods LIKE '%'+@PaymentMethods+'%')
                 ORDER BY 
-                    Distance ASC
+                    DistanceForSearch ASC
                 OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
 
             using (var connection = new SqlConnection(_config.ConnectionString))
@@ -56,6 +65,8 @@ namespace TableMasterApi.DAL
                     search.PageSize,
                     search.Latitude,
                     search.Longitude,
+                    search.CurrentUserLatitude,
+                    search.CurrentUserLongitude,
                     search.CuisineType,
                     search.PaymentMethods
                 });

@@ -20,7 +20,8 @@
     {
         public long Id { get; set; }
         public DateTime CreatedAt { get; set; }
-        public decimal Distance { get; set; }
+        public decimal DistanceForSearch { get; set; }
+        public decimal DistanceWithUser { get; set; }
         public decimal AverageRating { get; set; }
         public long NumberOfReviews { get; set; }
         public IEnumerable<TableEntityOut>? Tables { get; set; }
