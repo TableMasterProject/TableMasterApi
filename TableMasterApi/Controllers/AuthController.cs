@@ -2,12 +2,14 @@
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Text;
+using Asp.Versioning;
 using TableMasterApi.DAL;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 
 namespace TableMasterApi.Controllers
 {
+    [ApiVersion("1.0")]
     [Route("api/[controller]")]
     [ApiController]
     public class AuthController : ControllerBase

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
+using Asp.Versioning;
 using TableMasterApi.DAL;
 using TableMasterApi.Hubs;
 using TableMasterApi.Model;
@@ -12,6 +13,7 @@ using TableMasterApi.Service;
 
 namespace TableMasterApi.Controllers
 {
+    [ApiVersion("1.0")]
     [Route("api/[controller]")]
     [ApiController]
     public class ReservationController : ControllerBase
