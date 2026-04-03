@@ -14,78 +14,10 @@ namespace TableMasterApi.DAL
             _config = config;
         }
 
-        public async Task<IEnumerable<ReservationOut>> GetReservationsByRestaurantAsync(long restaurantId, DateOnly reservationDate, long? tableId = null)
-        {
-            var query = @"
-                SELECT 
-                    R.Id, R.UserId, R.TableId, R.RestaurantId, R.ReservationDate, R.NumberOfPeople, 
-                    R.SpecialRequest, R.CreatedAt, R.IsValidate,
-                    U.Id AS Id, U.FirstName, U.LastName, U.Email, U.AccountType, U.CreatedAt,
-                    T.Id AS Id, T.RestaurantId, T.TableNumber, T.NumberOfSeats, T.CreatedAt
-                FROM [Reservation] R
-                JOIN [User] U ON R.UserId = U.Id
-                JOIN [TableEntity] T ON R.TableId = T.Id
-                WHERE 
-                    T.RestaurantId = @RestaurantId
-                    AND CAST(R.ReservationDate AS DATE) >= @ReservationDate
-                    AND R.IsValidate = 1
-                    AND (@TableId IS NULL OR T.Id = @TableId) -- Filtre optionnel
-                ORDER BY R.ReservationDate ASC;";
-
-            using (var connection = new SqlConnection(_config.ConnectionString))
-            {
-                return await connection.QueryAsync<ReservationOut, UserOut, TableEntityOut, ReservationOut>(
-                    query,
-                    (reservation, user, table) => {
-                        reservation.User = user;
-                        reservation.Table = table;
-                        return reservation;
-                    },
-                    new {
-                        RestaurantId = restaurantId,
-                        ReservationDate = reservationDate.ToString("yyyy-MM-dd"),
-                        TableId = tableId // Dapper gère le null automatiquement
-                    },
-                    splitOn: "Id,Id"
-                );
-            }
-        }
-
-        public async Task<IEnumerable<ReservationOut>> GetPendingReservationsAsync(long restaurantId, long? tableId = null)
-        {
-            var query = @"
-                SELECT 
-                    R.*, 
-                    U.Id AS Id, U.FirstName, U.LastName, U.Email, U.AccountType, U.CreatedAt,
-                    T.Id AS Id, T.RestaurantId, T.TableNumber, T.NumberOfSeats, T.CreatedAt
-                FROM [Reservation] R
-                JOIN [User] U ON R.UserId = U.Id
-                JOIN [TableEntity] T ON R.TableId = T.Id
-                WHERE 
-                    R.RestaurantId = @RestaurantId
-                    AND R.IsValidate = 0
-                    AND (@TableId IS NULL OR T.Id = @TableId) -- Filtre optionnel
-                ORDER BY R.ReservationDate ASC;";
-
-            using (var connection = new SqlConnection(_config.ConnectionString))
-            {
-                return await connection.QueryAsync<ReservationOut, UserOut, TableEntityOut, ReservationOut>(
-                    query,
-                    (reservation, user, table) => {
-                        reservation.User = user;
-                        reservation.Table = table;
-                        return reservation;
-                    },
-                    new { RestaurantId = restaurantId, TableId = tableId },
-                    splitOn: "Id,Id"
-                );
-            }
-        }
-
         public async Task<ReservationOut> CreateReservationAsync(ReservationIn reservation)
         {
             var query = @"
-                INSERT INTO [Reservation] (UserId, TableId, RestaurantId, ReservationDate, NumberOfPeople, SpecialRequest, IsValidate)
+                INSERT INTO [Reservation] (UserId, TableId, RestaurantId, ReservationDate, NumberOfPeople, SpecialRequest, Status)
                 OUTPUT 
                     INSERTED.Id, 
                     INSERTED.UserId,
@@ -95,8 +27,8 @@ namespace TableMasterApi.DAL
                     INSERTED.NumberOfPeople,
                     INSERTED.SpecialRequest,
                     INSERTED.CreatedAt,
-                    INSERTED.IsValidate
-                VALUES (@UserId, @TableId, @RestaurantId, @ReservationDate, @NumberOfPeople, @SpecialRequest, @IsValidate);";
+                    INSERTED.Status
+                VALUES (@UserId, @TableId, @RestaurantId, @ReservationDate, @NumberOfPeople, @SpecialRequest, @Status);";
 
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
@@ -105,14 +37,14 @@ namespace TableMasterApi.DAL
             }
         }
 
-        public async Task<ReservationOut?> validateReservation(long id,bool IsValidate)
+        public async Task<ReservationOut?> updateReservationStatus(long id, ReservationStatus reservationStatus)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = @"
                             UPDATE [Reservation] 
-                                SET IsValidate = @IsValidate
+                                SET Status = @reservationStatus
                             OUTPUT 
                                 INSERTED.Id, 
                                 INSERTED.UserId,
@@ -122,22 +54,48 @@ namespace TableMasterApi.DAL
                                 INSERTED.NumberOfPeople,
                                 INSERTED.SpecialRequest,
                                 INSERTED.CreatedAt,
-                                INSERTED.IsValidate
+                                INSERTED.Status
                             WHERE Id = @Id";
                 var updatedReservation = await connection.QuerySingleAsync<ReservationOut>(query, new
                 {
                     Id = id,
-                    IsValidate,
+                    reservationStatus,
                 });
                 return updatedReservation;
             }
         }
 
-        internal async Task<IEnumerable<ReservationOut>> GetMyReservations(long idUserToken, SearchReservations searchReservations)
+        internal async Task<IEnumerable<ReservationOut>> GetReservations(SearchReservations searchReservations)
         {
-            var query = @"
+            List<string> filters = ["1=1"];
+            if (searchReservations.Statuses != null && searchReservations.Statuses.Any())
+            {
+                filters.Add("R.Status IN @Statuses");
+            }
+            if (searchReservations.tableId != null)
+            {
+                filters.Add("T.Id = @tableId");
+            }
+            if (searchReservations.IdUser != null)
+            {
+                filters.Add("R.UserId = @IdUser");
+            }
+            if (searchReservations.minDate != null)
+            {
+                filters.Add("CAST(R.ReservationDate AS DATE) >= @minDateString");
+            }
+            if (searchReservations.maxDate != null)
+            {
+                filters.Add("CAST(R.ReservationDate AS DATE) <= @maxDateString");
+            }
+            if (searchReservations.restaurantId != null)
+            {
+                filters.Add("R.RestaurantId = @restaurantId");
+            }
+
+            var query = $@"
         SELECT 
-            R.Id, R.UserId, R.TableId, R.RestaurantId, R.ReservationDate, R.NumberOfPeople, R.SpecialRequest, R.CreatedAt, R.IsValidate,
+            R.Id, R.UserId, R.TableId, R.RestaurantId, R.ReservationDate, R.NumberOfPeople, R.SpecialRequest, R.CreatedAt, R.Status,
             U.Id, U.FirstName, U.LastName, U.Email, U.AccountType, U.CreatedAt,
             T.Id, T.RestaurantId, T.TableNumber, T.NumberOfSeats, T.CreatedAt,
             Res.Id, Res.RestaurantName, Res.StreetNumber, Res.StreetName, Res.PostalCode, Res.City, Res.CuisineType -- Ajout des colonnes Restaurant
@@ -146,7 +104,7 @@ namespace TableMasterApi.DAL
         JOIN [TableEntity] T ON R.TableId = T.Id
         JOIN [Restaurant] Res ON R.RestaurantId = Res.Id -- Nouveau JOIN
         WHERE 
-            R.UserId = @UserId
+            {string.Join(" AND ", filters)}
         ORDER BY R.ReservationDate ASC
         OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
 
@@ -165,9 +123,14 @@ namespace TableMasterApi.DAL
                     },
                     new
                     {
-                        UserId = idUserToken,
                         searchReservations.Offset,
                         searchReservations.PageSize,
+                        searchReservations.Statuses,
+                        searchReservations.IdUser,
+                        searchReservations.tableId,
+                        searchReservations.minDateString,
+                        searchReservations.maxDateString,
+                        searchReservations.restaurantId
                     },
                     splitOn: "Id,Id,Id" // ✅ On ajoute un "Id" pour marquer le début du Restaurant
                 );
@@ -187,7 +150,7 @@ namespace TableMasterApi.DAL
                 R.NumberOfPeople, 
                 R.SpecialRequest, 
                 R.CreatedAt,
-                R.IsValidate,
+                R.Status,
                 U.Id AS Id,
                 U.FirstName, 
                 U.LastName, 

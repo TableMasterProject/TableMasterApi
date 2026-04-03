@@ -34,19 +34,19 @@ namespace TableMasterApi.Controllers
         }
 
         [Authorize]
-        [HttpGet("Restaurant/{Id}")]
-        public async Task<ActionResult<IEnumerable<ReservationOut>>> GetReservations(long Id, [FromQuery] DateOnly reservationDate, [FromQuery] long? tableId = null)
+        [HttpGet("")]
+        public async Task<ActionResult<IEnumerable<ReservationOut>>> GetReservations([FromQuery] SearchReservations searchReservations)
         {
             try
             {
                 var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-                if (Id == null || reservationDate == null)
+                if (searchReservations == null)
                 {
                     return BadRequest();
                 }
-                var resultes = await _reservationDAL.GetReservationsByRestaurantAsync(Id, reservationDate, tableId);
+                var resultes = await _reservationDAL.GetReservations(searchReservations);
 
                 if (resultes == null)
                     return NotFound("Aucune réservation trouvée.");
@@ -58,27 +58,6 @@ namespace TableMasterApi.Controllers
                 return StatusCode(500, e.Message);
             }
 
-        }
-        [Authorize]
-        [HttpGet("Restaurant/{Id}/Pending")]
-        public async Task<ActionResult<IEnumerable<ReservationOut>>> GetPendingReservations(long Id, [FromQuery] long? tableId = null)
-        {
-            try
-            {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
-                
-                var restaurant = await _restaurantDAL.GetRestaurantById(Id);
-                if (restaurant == null) return NotFound("Restaurant non trouvé.");
-                if (restaurant.UserId != idUserToken) return Unauthorized();
-
-                var results = await _reservationDAL.GetPendingReservationsAsync(Id, tableId);
-                return Ok(results);
-            }
-            catch (Exception e)
-            {
-                return StatusCode(500, e.Message);
-            }
         }
         
         [Authorize]
@@ -94,7 +73,8 @@ namespace TableMasterApi.Controllers
                 {
                     return BadRequest();
                 }
-                var resultes = await _reservationDAL.GetMyReservations(idUserToken, searchReservations);
+                searchReservations.IdUser = idUserToken;
+                var resultes = await _reservationDAL.GetReservations(searchReservations);
 
                 if (resultes == null)
                     return NotFound("Aucune réservation trouvée.");
@@ -125,14 +105,17 @@ namespace TableMasterApi.Controllers
                     return NotFound("Aucune Restaurant trouvée.");
 
                 reservation.UserId = idUserToken;
-                reservation.IsValidate = restaurant.IsAutoValidateReservation;
+                if (restaurant.IsAutoValidateReservation)
+                {
+                    reservation.Status = ReservationStatus.Validee;
+                }
                 var created = await _reservationDAL.CreateReservationAsync(reservation);
 
                 // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + reservation.RestaurantId)
                                           .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
 
-                if (reservation.IsValidate)
+                if (reservation.Status == ReservationStatus.Validee)
                 {
                     // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
                     await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + restaurant.Id)
@@ -149,8 +132,8 @@ namespace TableMasterApi.Controllers
         }
 
         [Authorize]
-        [HttpGet("{id}/Validate")]
-        public async Task<ActionResult<ReservationOut>> ValidateReservations(long id, [FromQuery]bool IsValidate)
+        [HttpGet("{id}/Status")]
+        public async Task<ActionResult<ReservationOut>> UpdateReservationStatus(long id, [FromQuery]ReservationStatus reservationStatus)
         {
             try
             {
@@ -173,7 +156,7 @@ namespace TableMasterApi.Controllers
                     return Unauthorized();
                 }
 
-                var resultes = await _reservationDAL.validateReservation(id, IsValidate);
+                var resultes = await _reservationDAL.updateReservationStatus(id, reservationStatus);
 
                 // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + Restaurant.Id)

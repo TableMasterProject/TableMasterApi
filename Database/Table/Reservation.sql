@@ -7,8 +7,8 @@
     [ReservationDate] DATETIME NOT NULL,                        -- Date et heure de la réservation
     [NumberOfPeople] INT NOT NULL,                             -- Nombre de personnes pour la réservation
     [SpecialRequest] NVARCHAR(500) NULL,                       -- Demande spéciale (facultatif)
-    [CreatedAt] DATETIME NOT NULL DEFAULT GETDATE(),           [IsValidate] BIT NOT NULL DEFAULT 0, 
-    -- Date de création de la réservation
+    [CreatedAt] DATETIME NOT NULL DEFAULT GETDATE(),           
+    [Status] TINYINT NOT NULL DEFAULT 0,
 
     CONSTRAINT FK_Reservation_User FOREIGN KEY (UserId) REFERENCES [dbo].[User](Id),  -- Clé étrangère vers l'utilisateur
     CONSTRAINT FK_Reservation_Table FOREIGN KEY (TableId) REFERENCES [dbo].[TableEntity](Id),  -- Clé étrangère vers la table réservée

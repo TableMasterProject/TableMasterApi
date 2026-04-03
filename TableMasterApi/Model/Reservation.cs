@@ -1,5 +1,13 @@
 ﻿namespace TableMasterApi.Model
 {
+    public enum ReservationStatus : byte
+    {
+        EnAttente = 0,
+        Validee = 1,
+        Finie = 2,
+        AnnuleeParResto = 3,
+        AnnuleeParClient = 4
+    }
     public class ReservationIn
     {
         public long UserId { get; set; }
@@ -8,7 +16,7 @@
         public DateTime ReservationDate { get; set; }
         public int NumberOfPeople { get; set; }
         public string SpecialRequest { get; set; }
-        public Boolean IsValidate { get; set; }
+        public ReservationStatus Status { get; set; }
     }
     public class ReservationOut : ReservationIn
     {

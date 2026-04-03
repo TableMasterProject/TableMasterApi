@@ -97,6 +97,7 @@ if (!result.Successful)
     Console.ForegroundColor = ConsoleColor.Red;
     Console.WriteLine($"Erreur DbUp : {result.Error}");
     Console.ResetColor();
+    throw result.Error;
 }
 
 builder.Services.AddEndpointsApiExplorer();
