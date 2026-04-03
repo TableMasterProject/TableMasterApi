@@ -86,6 +86,16 @@ namespace TableMasterApi.DAL
         {
             await googleMapsService.FillLatLongAsync(restaurant);
 
+            if (restaurant.CuisineType != null)
+            {
+                restaurant.CuisineType = restaurant.CuisineType.TrimStart(',');
+            }
+
+            if (restaurant.PaymentMethods != null)
+            {
+                restaurant.PaymentMethods = restaurant.PaymentMethods.TrimStart(',');
+            }
+
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
@@ -121,6 +131,17 @@ namespace TableMasterApi.DAL
         public async Task<RestaurantOut?> putRestaurant(long idUser, long id, RestaurantIn restaurant)
         {
             await googleMapsService.FillLatLongAsync(restaurant);
+
+            if (restaurant.CuisineType != null)
+            {
+                restaurant.CuisineType = restaurant.CuisineType.TrimStart(',');
+            }
+
+            if (restaurant.PaymentMethods != null)
+            {
+                restaurant.PaymentMethods = restaurant.PaymentMethods.TrimStart(',');
+            }
+
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
                 connection.Open();
