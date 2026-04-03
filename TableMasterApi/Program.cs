@@ -6,6 +6,8 @@ using System.Text;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 using TableMasterApi.Hubs;
+using DbUp;
+using DbUp.SqlServer;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,11 +24,9 @@ builder.Services.AddCors(options =>
 // Charger la configuration � partir du fichier appsettings.json
 builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 
-// V�rifier si une variable d'environnement existe pour la connexion SQL
-var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
 {
-    // �craser la valeur de ConfigPerso:ConnectionString avec celle de l'environnement
     builder.Configuration["ConfigPerso:ConnectionString"] = connectionString;
 }
 
@@ -34,7 +34,7 @@ if (!string.IsNullOrEmpty(connectionString))
 builder.Services.Configure<ConfigPerso>(builder.Configuration.GetSection("ConfigPerso"));
 
 // Ajouter JwtService � l'injection de d�pendances
-builder.Services.AddSingleton<ConfigPerso>();
+builder.Services.AddSingleton(sp => builder.Configuration.GetSection("ConfigPerso").Get<ConfigPerso>());
 builder.Services.AddSingleton<JwtService>();
 
 // Ajout de SignalR
@@ -81,6 +81,23 @@ builder.Services.AddApiVersioning(options =>
     options.GroupNameFormat = "'v'VVV";
     options.SubstituteApiVersionInUrl = true;
 });
+
+Console.WriteLine("Vérification de la base de données...");
+EnsureDatabase.For.SqlDatabase(connectionString);
+
+var upgrader = DeployChanges.To
+    .SqlDatabase(connectionString)
+    .WithScriptsEmbeddedInAssembly(System.Reflection.Assembly.GetExecutingAssembly())
+    .LogToConsole()
+    .Build();
+var result = upgrader.PerformUpgrade();
+
+if (!result.Successful)
+{
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.WriteLine($"Erreur DbUp : {result.Error}");
+    Console.ResetColor();
+}
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
