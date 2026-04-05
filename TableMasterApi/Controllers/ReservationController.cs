@@ -143,11 +143,17 @@ namespace TableMasterApi.Controllers
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + reservation.RestaurantId)
                                           .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
 
+                await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + created.UserId)
+                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
+
                 if (reservation.Status == ReservationStatus.Validee)
                 {
                     // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
                     await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + restaurant.Id)
-                                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationValidate, JsonSerializer.Serialize(created));
+                                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(created));
+
+                    await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + created.UserId)
+                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(created));
                 }
 
                 return Ok(created);
@@ -188,7 +194,11 @@ namespace TableMasterApi.Controllers
 
                 // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + Restaurant.Id)
-                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationValidate, JsonSerializer.Serialize(resultes));
+                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(resultes));
+
+                await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + Reservation.UserId)
+                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(resultes));
+
 
                 return Ok(resultes);
             }
@@ -214,6 +224,8 @@ namespace TableMasterApi.Controllers
 
                 // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + deleted.RestaurantId)
+                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
+                await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + deleted.UserId)
                                           .SendAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
 
                 return Ok(deleted!=null);
