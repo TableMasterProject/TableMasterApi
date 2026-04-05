@@ -2,7 +2,7 @@
 {
     public class SearchReservations
     {
-        public long? Offset { get; set; }
+        public long? Offset { get; set; } = 0;
         public long? PageSize { get; set; } = 20;
 
         public long? tableId { get; set; }

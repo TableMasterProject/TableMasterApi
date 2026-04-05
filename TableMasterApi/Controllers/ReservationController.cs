@@ -100,6 +100,34 @@ namespace TableMasterApi.Controllers
                 if (reservation == null)
                     return BadRequest("Données de réservation invalides.");
 
+                var search = new SearchReservations
+                {
+                    tableId = reservation.TableId,
+                    minDate = DateOnly.FromDateTime(reservation.ReservationDate),
+                    maxDate = DateOnly.FromDateTime(reservation.ReservationDate),
+                    Statuses = new List<ReservationStatus> { ReservationStatus.Validee }
+                };
+
+                // On récupère les réservations existantes via ta méthode DAL
+                var existingReservations = await _reservationDAL.GetReservations(search);
+
+                if (existingReservations != null && existingReservations.Count() > 0)
+                {
+                    // On définit la marge de sécurité (90 minutes)
+                    TimeSpan margin = TimeSpan.FromMinutes(90);
+
+                    foreach (var res in existingReservations)
+                    {
+                        // Calcul de l'écart entre la réservation existante et la nouvelle demande
+                        var diff = (reservation.ReservationDate - res.ReservationDate).Duration();
+
+                        if (diff < margin)
+                        {
+                            return Conflict($"La table est déjà occupée. Une marge de 1h30 est requise (conflit avec la réservation de {res.ReservationDate:HH:mm}).");
+                        }
+                    }
+                }
+
                 var restaurant = await _restaurantDAL.GetRestaurantById(reservation.RestaurantId);
                 if (restaurant == null)
                     return NotFound("Aucune Restaurant trouvée.");
@@ -132,7 +160,7 @@ namespace TableMasterApi.Controllers
         }
 
         [Authorize]
-        [HttpGet("{id}/Status")]
+        [HttpPut("{id}/Status")]
         public async Task<ActionResult<ReservationOut>> UpdateReservationStatus(long id, [FromQuery]ReservationStatus reservationStatus)
         {
             try

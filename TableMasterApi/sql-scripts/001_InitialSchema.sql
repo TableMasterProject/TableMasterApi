@@ -134,8 +134,7 @@ CREATE TABLE [dbo].[Reservation] (
     PRIMARY KEY CLUSTERED ([Id] ASC),
     CONSTRAINT [FK_Reservation_User] FOREIGN KEY ([UserId]) REFERENCES [dbo].[User] ([Id]),
     CONSTRAINT [FK_Reservation_Table] FOREIGN KEY ([TableId]) REFERENCES [dbo].[TableEntity] ([Id]),
-    CONSTRAINT [FK_Reservation_Restaurant] FOREIGN KEY ([RestaurantId]) REFERENCES [dbo].[Restaurant] ([Id]),
-    CONSTRAINT [UQ_Reservation_Table_Date] UNIQUE NONCLUSTERED ([TableId] ASC, [ReservationDate] ASC)
+    CONSTRAINT [FK_Reservation_Restaurant] FOREIGN KEY ([RestaurantId]) REFERENCES [dbo].[Restaurant] ([Id])
 );
 GO
 
