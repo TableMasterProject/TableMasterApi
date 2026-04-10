@@ -20,17 +20,32 @@ namespace TableMasterApi.Controllers
     {
         private readonly ReservationDAL _reservationDAL;
         private readonly RestaurantDAL _restaurantDAL;
+        private readonly DeviceTokenDAL _deviceTokenDAL;
 
         private readonly JwtService _jwtService;
+        private readonly FcmService _fcmService;
 
         private readonly IHubContext<ReservationHub> _hubContext;
 
-        public ReservationController(IOptions<ConfigPerso> config, JwtService jwtService, IHubContext<ReservationHub> hubContext)
+        public ReservationController(IOptions<ConfigPerso> config, JwtService jwtService, IHubContext<ReservationHub> hubContext, DeviceTokenDAL deviceTokenDAL, FcmService fcmService)
         {
             _jwtService = jwtService;
             _reservationDAL = new ReservationDAL(config.Value);
             _restaurantDAL = new RestaurantDAL(config.Value);
+            _deviceTokenDAL = deviceTokenDAL;
+            _fcmService = fcmService;
             _hubContext = hubContext;
+        }
+
+        private async Task SendPushNotificationToUsers(IEnumerable<long> userIds, string title, string body, object? data = null)
+        {
+            var tokens = await _deviceTokenDAL.GetDeviceTokensForUserIdsAsync(userIds);
+            if (tokens?.Any() != true)
+            {
+                return;
+            }
+
+            await _fcmService.SendNotificationAsync(tokens, title, body, data);
         }
 
         [Authorize]
@@ -139,21 +154,42 @@ namespace TableMasterApi.Controllers
                 }
                 var created = await _reservationDAL.CreateReservationAsync(reservation);
 
-                // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
+                // Envoi en temps réel via SignalR
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + reservation.RestaurantId)
                                           .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
 
                 await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + created.UserId)
                               .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
 
+                // Envoi de push si l'application est fermée
+                await SendPushNotificationToUsers(new[] { restaurant.UserId },
+                    "Nouvelle réservation",
+                    $"Nouvelle réservation pour le {reservation.ReservationDate:dd/MM/yyyy HH:mm}.",
+                    new { type = "reservation_created", reservationId = created.Id });
+
+                await SendPushNotificationToUsers(new[] { created.UserId },
+                    "Réservation enregistrée",
+                    $"Votre réservation du {created.ReservationDate:dd/MM/yyyy HH:mm} a été créée.",
+                    new { type = "reservation_created", reservationId = created.Id });
+
                 if (reservation.Status == ReservationStatus.Validee)
                 {
-                    // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
+                    // Envoi en temps réel via SignalR
                     await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + restaurant.Id)
                                               .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(created));
 
                     await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + created.UserId)
                               .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(created));
+
+                    await SendPushNotificationToUsers(new[] { restaurant.UserId },
+                        "Réservation validée",
+                        $"Réservation validée pour le {created.ReservationDate:dd/MM/yyyy HH:mm}.",
+                        new { type = "reservation_status_updated", reservationId = created.Id, status = created.Status.ToString() });
+
+                    await SendPushNotificationToUsers(new[] { created.UserId },
+                        "Votre réservation est validée",
+                        $"Votre réservation du {created.ReservationDate:dd/MM/yyyy HH:mm} a été validée.",
+                        new { type = "reservation_status_updated", reservationId = created.Id, status = created.Status.ToString() });
                 }
 
                 return Ok(created);
@@ -185,20 +221,29 @@ namespace TableMasterApi.Controllers
                 var Restaurant = await _restaurantDAL.GetRestaurantById(Reservation.RestaurantId);
                 if (Restaurant == null)
                     return NotFound("Aucune Restaurant trouvée.");
-                if (Restaurant.UserId != idUserToken)
+                if (Restaurant.UserId != idUserToken && Reservation.UserId != idUserToken)
                 {
                     return Unauthorized();
                 }
 
                 var resultes = await _reservationDAL.updateReservationStatus(id, reservationStatus);
 
-                // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
+                // Envoi en temps réel via SignalR
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + Restaurant.Id)
                                           .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(resultes));
 
                 await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + Reservation.UserId)
                               .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(resultes));
 
+                await SendPushNotificationToUsers(new[] { Restaurant.UserId },
+                    "Statut de réservation mis à jour",
+                    $"La réservation #{id} est maintenant '{reservationStatus}'.",
+                    new { type = "reservation_status_updated", reservationId = id, status = reservationStatus.ToString() });
+
+                await SendPushNotificationToUsers(new[] { Reservation.UserId },
+                    "Votre réservation a changé",
+                    $"Votre réservation du {Reservation.ReservationDate:dd/MM/yyyy HH:mm} est maintenant '{reservationStatus}'.",
+                    new { type = "reservation_status_updated", reservationId = id, status = reservationStatus.ToString() });
 
                 return Ok(resultes);
             }
@@ -222,13 +267,27 @@ namespace TableMasterApi.Controllers
                 if (deleted == null )
                     return NotFound("Restaurant not found.");
 
-                // Envoi de la mise à jour à tous les clients connectés au restaurant concerné
+                // Envoi en temps réel via SignalR
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + deleted.RestaurantId)
                                           .SendAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
                 await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + deleted.UserId)
                                           .SendAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
 
-                return Ok(deleted!=null);
+                var restaurant = await _restaurantDAL.GetRestaurantById(deleted.RestaurantId);
+                if (restaurant != null)
+                {
+                    await SendPushNotificationToUsers(new[] { restaurant.UserId },
+                        "Réservation annulée",
+                        $"La réservation du {deleted.ReservationDate:dd/MM/yyyy HH:mm} a été annulée.",
+                        new { type = "reservation_cancelled", reservationId = id });
+                }
+
+                await SendPushNotificationToUsers(new[] { deleted.UserId },
+                    "Réservation annulée",
+                    $"Votre réservation du {deleted.ReservationDate:dd/MM/yyyy HH:mm} a été annulée.",
+                    new { type = "reservation_cancelled", reservationId = id });
+
+                return Ok(deleted != null);
             }
             catch (Exception e)
             {

@@ -6,6 +6,9 @@
 # dotenv files
 .env
 
+# Firebase Admin SDK service account key
+TableMasterApi/tablemaster-firebase.json
+
 # User-specific files
 *.rsuser
 *.suo

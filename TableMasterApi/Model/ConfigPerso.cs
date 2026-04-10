@@ -7,5 +7,6 @@
         public string Audience { get; set; }
         public string ConnectionString { get; set; }
         public string KeyApiGoogleMaps { get; set; }
+        public string FirebaseServerKey { get; set; }
     }
 }

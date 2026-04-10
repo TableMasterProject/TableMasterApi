@@ -8,9 +8,6 @@
     <DefaultFileStructure>BySchemaAndSchemaType</DefaultFileStructure>
   </PropertyGroup>
   <ItemGroup>
-    <Folder Include="Table\" />
-  </ItemGroup>
-  <ItemGroup>
     <Build Include="Table\ClosedDayException.sql" />
     <Build Include="Table\DailyActivity.sql" />
     <Build Include="Table\Menu.sql" />

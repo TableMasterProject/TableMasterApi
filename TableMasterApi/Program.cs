@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using TableMasterApi.DAL;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 using TableMasterApi.Hubs;
@@ -36,8 +37,10 @@ if (!string.IsNullOrEmpty(connectionString))
 builder.Services.Configure<ConfigPerso>(builder.Configuration.GetSection("ConfigPerso"));
 
 // Ajouter JwtService � l'injection de d�pendances
-builder.Services.AddSingleton(sp => builder.Configuration.GetSection("ConfigPerso").Get<ConfigPerso>());
+builder.Services.AddSingleton(sp => builder.Configuration.GetSection("ConfigPerso").Get<ConfigPerso>()!);
 builder.Services.AddSingleton<JwtService>();
+builder.Services.AddSingleton<FcmService>();
+builder.Services.AddScoped<DeviceTokenDAL>();
 
 // Ajout de SignalR
 builder.Services.AddSignalR();
@@ -59,7 +62,7 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = builder.Configuration["ConfigPerso:Issuer"],
         ValidAudience = builder.Configuration["ConfigPerso:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["ConfigPerso:SecretKey"]))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["ConfigPerso:SecretKey"] ?? string.Empty))
     };
 });
 
