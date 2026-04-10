@@ -8,6 +8,8 @@ using TableMasterApi.Service;
 using TableMasterApi.Hubs;
 using DbUp;
 using DbUp.SqlServer;
+using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.SwaggerGen;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -63,7 +65,7 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddControllers();
 
-// Configuration du versionnage pour .NET 8
+// Configuration du versionnage pour .NET 10
 builder.Services.AddApiVersioning(options =>
 {
     options.DefaultApiVersion = new ApiVersion(1, 0);
@@ -101,7 +103,47 @@ if (!result.Successful)
 }
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "TableMaster API", Version = "v1" });
+    c.SwaggerDoc("v2", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "TableMaster API", Version = "v2" });
+
+    // 1. IL MANQUAIT ÇA : Définir comment le token doit être envoyé
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Description = "Authentification JWT. Tapez 'Bearer' suivi d'un espace et de votre token.",
+        Name = "Authorization",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    // 2. Appliquer la sécurité (Le cadenas)
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer" // Doit correspondre exactement à l'ID ci-dessus
+                }
+            },
+            new List<string>()
+        }
+    });
+
+    // Filtre pour séparer V1 et V2
+    c.DocInclusionPredicate((docName, apiDesc) =>
+    {
+        // Si ton contrôleur n'a pas d'attribut [ApiVersion], on peut décider de l'afficher en v1 par défaut
+        var versions = apiDesc.CustomAttributes().OfType<Asp.Versioning.ApiVersionAttribute>().SelectMany(attr => attr.Versions);
+        if (!versions.Any()) return docName == "v1";
+
+        return versions.Any(v => $"v{v.MajorVersion}" == docName);
+    });
+});
 
 var app = builder.Build();
 
