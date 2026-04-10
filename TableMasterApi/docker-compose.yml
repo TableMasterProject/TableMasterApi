@@ -14,19 +14,19 @@ services:
     networks:
       - sqlserver-network
 
-#  api:
-#    build: .
-#    container_name: TableMasterApi-${NAME_ENV}
-#    depends_on:
-#      - sqlserver
-#    environment:
-#      - ASPNETCORE_URLS=http://+:8080
-#      - ConnectionStrings__DefaultConnection=Server=TableMaster;Database=TableMaster;User Id=sa;Password=${DB_PASSWORD};Encrypt=False;TrustServerCertificate=False;
-#    ports:
-#      - "${API_PORT}:8080"
-#    restart: always
-#    networks:
-#      - sqlserver-network
+  api:
+    build: .
+    container_name: TableMasterApi-${NAME_ENV}
+    depends_on:
+      - sqlserver
+    environment:
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Server=TableMaster;Database=TableMaster;User Id=sa;Password=${DB_PASSWORD};Encrypt=False;TrustServerCertificate=False;
+    ports:
+      - "${API_PORT}:8080"
+    restart: always
+    networks:
+      - sqlserver-network
 
 networks:
   sqlserver-network:
