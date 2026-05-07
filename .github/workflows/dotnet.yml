@@ -13,7 +13,6 @@ jobs:
     strategy:
       matrix:
         dotnet-version: ['10.0.x']
-        include-prerelease: true 
     
     steps:
     - uses: actions/checkout@v4
@@ -22,6 +21,7 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ matrix.dotnet-version }}
+        include-prerelease: true 
     
     - name: Restore dependencies
       run: |
