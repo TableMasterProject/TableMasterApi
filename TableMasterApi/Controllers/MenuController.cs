@@ -2,8 +2,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Options;
-using TableMasterApi.DAL;
+using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 
@@ -14,15 +13,15 @@ namespace TableMasterApi.Controllers
     [ApiController]
     public class MenuController : ControllerBase
     {
-        private readonly MenuDAL _dal;
-        private readonly RestaurantDAL _RestaurantDAL;
+        private readonly IMenuDAL _dal;
+        private readonly IRestaurantDAL _restaurantDAL;
         private readonly JwtService _jwtService;
 
-        public MenuController(IOptions<ConfigPerso> config, JwtService jwtService)
+        public MenuController(IMenuDAL menuDAL, IRestaurantDAL restaurantDAL, JwtService jwtService)
         {
             _jwtService = jwtService;
-            _dal = new MenuDAL(config.Value);
-            _RestaurantDAL = new RestaurantDAL(config.Value);
+            _dal = menuDAL;
+            _restaurantDAL = restaurantDAL;
         }
 
         [Authorize]
@@ -71,7 +70,7 @@ namespace TableMasterApi.Controllers
                 if (menuBefore == null)
                     return NotFound("Le menu n'existe pas");
 
-                var restaurant = await _RestaurantDAL.GetRestaurantById(menuBefore.RestaurantId);
+                var restaurant = await _restaurantDAL.GetRestaurantById(menuBefore.RestaurantId);
                 if (restaurant == null)
                     return NotFound("Le restaurant n'existe pas");
                 if (restaurant.UserId != idUserToken)

@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 using Asp.Versioning;
-using TableMasterApi.DAL;
+using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 
@@ -17,15 +17,15 @@ namespace TableMasterApi.Controllers
     [ApiController]
     public class UserController : ControllerBase
     {
-        private readonly UserDAL _userDAL;
-        private readonly AuthDAL _authDAL;
+        private readonly IUserDAL _userDAL;
+        private readonly IAuthDAL _authDAL;
         private readonly JwtService _jwtService;
 
-        public UserController(JwtService jwtService, IOptions<ConfigPerso> config)
+        public UserController(IUserDAL userDAL, IAuthDAL authDAL, JwtService jwtService)
         {
+            _userDAL = userDAL;
+            _authDAL = authDAL;
             _jwtService = jwtService;
-            _userDAL = new UserDAL(config.Value);
-            _authDAL = new AuthDAL();
         }
 
         // GET api/user/{id} -> Récupérer un utilisateur par ID

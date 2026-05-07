@@ -3,10 +3,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Asp.Versioning;
-using TableMasterApi.DAL;
+using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Hubs;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
@@ -18,20 +17,20 @@ namespace TableMasterApi.Controllers
     [ApiController]
     public class ReservationController : ControllerBase
     {
-        private readonly ReservationDAL _reservationDAL;
-        private readonly RestaurantDAL _restaurantDAL;
-        private readonly DeviceTokenDAL _deviceTokenDAL;
+        private readonly IReservationDAL _reservationDAL;
+        private readonly IRestaurantDAL _restaurantDAL;
+        private readonly IDeviceTokenDAL _deviceTokenDAL;
 
         private readonly JwtService _jwtService;
         private readonly FcmService _fcmService;
 
         private readonly IHubContext<ReservationHub> _hubContext;
 
-        public ReservationController(IOptions<ConfigPerso> config, JwtService jwtService, IHubContext<ReservationHub> hubContext, DeviceTokenDAL deviceTokenDAL, FcmService fcmService)
+        public ReservationController(IReservationDAL reservationDAL, IRestaurantDAL restaurantDAL, IDeviceTokenDAL deviceTokenDAL, JwtService jwtService, IHubContext<ReservationHub> hubContext, FcmService fcmService)
         {
             _jwtService = jwtService;
-            _reservationDAL = new ReservationDAL(config.Value);
-            _restaurantDAL = new RestaurantDAL(config.Value);
+            _reservationDAL = reservationDAL;
+            _restaurantDAL = restaurantDAL;
             _deviceTokenDAL = deviceTokenDAL;
             _fcmService = fcmService;
             _hubContext = hubContext;
@@ -226,7 +225,7 @@ namespace TableMasterApi.Controllers
                     return Unauthorized();
                 }
 
-                var resultes = await _reservationDAL.updateReservationStatus(id, reservationStatus);
+                var resultes = await _reservationDAL.UpdateReservationStatus(id, reservationStatus);
 
                 // Envoi en temps réel via SignalR
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + Restaurant.Id)

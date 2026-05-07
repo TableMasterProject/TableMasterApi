@@ -2,10 +2,14 @@ using Dapper;
 using Microsoft.Data.SqlClient;
 using System.Linq;
 using TableMasterApi.Model;
+using TableMasterApi.DAL.Interfaces;
 
 namespace TableMasterApi.DAL
 {
-    public class DeviceTokenDAL
+    /// <summary>
+    /// Data Access Layer pour les tokens d'appareils
+    /// </summary>
+    public class DeviceTokenDAL : IDeviceTokenDAL
     {
         private readonly string _connectionString;
 

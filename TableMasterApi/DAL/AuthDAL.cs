@@ -1,9 +1,13 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using TableMasterApi.Model;
+using TableMasterApi.DAL.Interfaces;
 
 namespace TableMasterApi.DAL
 {
-    public class AuthDAL
+    /// <summary>
+    /// Data Access Layer pour l'authentification
+    /// </summary>
+    public class AuthDAL : IAuthDAL
     {
         public bool VerifyPassword(string hashedPassword, string plainPassword)
         {

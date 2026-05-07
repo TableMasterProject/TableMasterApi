@@ -1,8 +1,7 @@
 ﻿using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
-using TableMasterApi.DAL;
+using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 
@@ -13,13 +12,13 @@ namespace TableMasterApi.Controllers
     [ApiController]
     public class RestaurantController : ControllerBase
     {
-        private readonly RestaurantDAL _restaurantDAL;
+        private readonly IRestaurantDAL _restaurantDAL;
         private readonly JwtService _jwtService;
 
-        public RestaurantController(JwtService jwtService, IOptions<ConfigPerso> config)
+        public RestaurantController(IRestaurantDAL restaurantDAL, JwtService jwtService)
         {
+            _restaurantDAL = restaurantDAL;
             _jwtService = jwtService;
-            _restaurantDAL = new RestaurantDAL(config.Value);
         }
 
         // GET: api/Restaurant
@@ -106,7 +105,7 @@ namespace TableMasterApi.Controllers
                 // var existing = await _restaurantDAL.GetRestaurantById(id);
                 // if (existing.UserId != idUserToken) return Unauthorized();
 
-                var put = await _restaurantDAL.putRestaurant(idUserToken, id, restaurant);
+                var put = await _restaurantDAL.PutRestaurantAsync(idUserToken, id, restaurant);
                 if (put == null)
                     return NotFound("Restaurant non trouvé ou modification impossible.");
 

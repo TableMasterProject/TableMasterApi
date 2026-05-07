@@ -2,8 +2,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Options;
-using TableMasterApi.DAL;
+using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 
@@ -14,16 +13,16 @@ namespace TableMasterApi.Controllers
     [ApiController]
     public class DailyActivityController : ControllerBase
     {
-        private readonly DailyActivityDAL _dal;
-        private readonly RestaurantDAL _RestaurantDAL;
+        private readonly IDailyActivityDAL _dal;
+        private readonly IRestaurantDAL _restaurantDAL;
 
         private readonly JwtService _jwtService;
 
-        public DailyActivityController(IOptions<ConfigPerso> config, JwtService jwtService)
+        public DailyActivityController(IDailyActivityDAL dailyActivityDAL, IRestaurantDAL restaurantDAL, JwtService jwtService)
         {
             _jwtService = jwtService;
-            _dal = new DailyActivityDAL(config.Value);
-            _RestaurantDAL = new RestaurantDAL(config.Value);
+            _dal = dailyActivityDAL;
+            _restaurantDAL = restaurantDAL;
         }
 
         [Authorize]
@@ -80,7 +79,7 @@ namespace TableMasterApi.Controllers
                 if (tableBefore == null)
                     return NotFound("La DailyActivity n'existe pas");
 
-                var restaurant = await _RestaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
+                var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
 
                 if (restaurant == null)
                     return NotFound("Le restaurant n'existe pas");
@@ -110,7 +109,7 @@ namespace TableMasterApi.Controllers
                 if (tableBefore == null)
                     return NotFound("La DailyActivity n'existe pas");
 
-                var restaurant = await _RestaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
+                var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
 
                 if (restaurant == null)
                     return NotFound("Le restaurant n'existe pas");

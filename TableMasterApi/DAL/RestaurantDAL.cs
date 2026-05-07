@@ -3,10 +3,14 @@ using Microsoft.Data.SqlClient;
 using System.Diagnostics.Eventing.Reader;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
+using TableMasterApi.DAL.Interfaces;
 
 namespace TableMasterApi.DAL
 {
-    public class RestaurantDAL
+    /// <summary>
+    /// Data Access Layer pour la gestion des restaurants
+    /// </summary>
+    public class RestaurantDAL : IRestaurantDAL
     {
         private readonly ConfigPerso _config;
         private readonly GoogleMapsService googleMapsService;
@@ -128,7 +132,7 @@ namespace TableMasterApi.DAL
             }
         }
 
-        public async Task<RestaurantOut?> putRestaurant(long idUser, long id, RestaurantIn restaurant)
+        public async Task<RestaurantOut?> PutRestaurantAsync(long idUser, long id, RestaurantIn restaurant)
         {
             await googleMapsService.FillLatLongAsync(restaurant);
 

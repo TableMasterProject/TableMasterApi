@@ -2,10 +2,14 @@
 using Microsoft.Data.SqlClient;
 using System.Data.SqlClient;
 using TableMasterApi.Model;
+using TableMasterApi.DAL.Interfaces;
 
 namespace TableMasterApi.DAL
 {
-    public class DailyActivityDAL
+    /// <summary>
+    /// Data Access Layer pour les activités quotidiennes
+    /// </summary>
+    public class DailyActivityDAL : IDailyActivityDAL
     {
         private readonly ConfigPerso _config;
 

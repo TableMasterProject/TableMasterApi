@@ -2,8 +2,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Options;
-using TableMasterApi.DAL;
+using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Hubs;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
@@ -13,18 +12,18 @@ namespace TableMasterApi.Controllers
     [ApiVersion("1.0")]
     [Route("api/[controller]")]
     [ApiController]
-    public class TableController : Controller
+    public class TableController : ControllerBase
     {
-        private readonly TableDAL _tableDAL;
-        private readonly RestaurantDAL _RestaurantDAL;
+        private readonly ITableDAL _tableDAL;
+        private readonly IRestaurantDAL _restaurantDAL;
 
         private readonly JwtService _jwtService;
 
-        public TableController(IOptions<ConfigPerso> config, JwtService jwtService)
+        public TableController(ITableDAL tableDAL, IRestaurantDAL restaurantDAL, JwtService jwtService)
         {
             _jwtService = jwtService;
-            _tableDAL = new TableDAL(config.Value);
-            _RestaurantDAL = new RestaurantDAL(config.Value);
+            _tableDAL = tableDAL;
+            _restaurantDAL = restaurantDAL;
         }
 
         [Authorize]
@@ -66,7 +65,7 @@ namespace TableMasterApi.Controllers
                 if (table == null)
                     return BadRequest("Données de réservation invalides.");
 
-                var restaurant = await _RestaurantDAL.GetRestaurantById(Id);
+                var restaurant = await _restaurantDAL.GetRestaurantById(Id);
 
                 if (restaurant == null)
                     return NotFound("Le restaurant n'existe pas");
@@ -101,7 +100,7 @@ namespace TableMasterApi.Controllers
                 if (tableBefore == null )
                     return NotFound("La table n'existe pas");
 
-                var restaurant = await _RestaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
+                var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
 
                 if (restaurant == null)
                     return NotFound("Le restaurant n'existe pas");
@@ -132,7 +131,7 @@ namespace TableMasterApi.Controllers
                 if (tableBefore == null)
                     return NotFound("La table n'existe pas");
 
-                var restaurant = await _RestaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
+                var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
 
                 if (restaurant == null)
                     return NotFound("Le restaurant n'existe pas");
@@ -162,7 +161,7 @@ namespace TableMasterApi.Controllers
                     return BadRequest("La liste des tables est vide.");
 
                 // Vérification de sécurité : le restaurant appartient-il à l'utilisateur ?
-                var restaurant = await _RestaurantDAL.GetRestaurantById(Id);
+                var restaurant = await _restaurantDAL.GetRestaurantById(Id);
                 if (restaurant == null)
                     return NotFound("Le restaurant n'existe pas");
 

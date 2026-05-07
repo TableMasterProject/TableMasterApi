@@ -1,17 +1,17 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using System.Data;
-using Dapper;                      // Nécessaire pour utiliser Dapper
-using System.Data;                  // Pour IDbConnection
-using System.Collections.Generic;   // Pour IEnumerable
+﻿using Dapper;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using TableMasterApi.Model;
+using TableMasterApi.DAL.Interfaces;
 using Microsoft.Data.SqlClient;
-using Microsoft.AspNetCore.Identity;       // Pour utiliser async et await
-
+using Microsoft.AspNetCore.Identity;
 
 namespace TableMasterApi.DAL
 {
-    public class UserDAL : Controller
+    /// <summary>
+    /// Data Access Layer pour la gestion des utilisateurs
+    /// </summary>
+    public class UserDAL : IUserDAL
     {
         private readonly ConfigPerso _config;
 

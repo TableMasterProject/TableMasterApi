@@ -1,10 +1,14 @@
 ﻿using Dapper;
 using Microsoft.Data.SqlClient;
 using TableMasterApi.Model;
+using TableMasterApi.DAL.Interfaces;
 
 namespace TableMasterApi.DAL
 {
-    public class ClosedDayExceptionDAL
+    /// <summary>
+    /// Data Access Layer pour les jours de fermeture exceptionnels
+    /// </summary>
+    public class ClosedDayExceptionDAL : IClosedDayExceptionDAL
     {
         private readonly ConfigPerso _config;
 

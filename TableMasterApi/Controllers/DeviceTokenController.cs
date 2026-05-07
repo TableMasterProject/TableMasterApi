@@ -1,7 +1,7 @@
 using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using TableMasterApi.DAL;
+using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 
@@ -12,10 +12,10 @@ namespace TableMasterApi.Controllers
     [ApiController]
     public class DeviceTokenController : ControllerBase
     {
-        private readonly DeviceTokenDAL _deviceTokenDAL;
+        private readonly IDeviceTokenDAL _deviceTokenDAL;
         private readonly JwtService _jwtService;
 
-        public DeviceTokenController(DeviceTokenDAL deviceTokenDAL, JwtService jwtService)
+        public DeviceTokenController(IDeviceTokenDAL deviceTokenDAL, JwtService jwtService)
         {
             _deviceTokenDAL = deviceTokenDAL;
             _jwtService = jwtService;

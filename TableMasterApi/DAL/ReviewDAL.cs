@@ -2,10 +2,14 @@
 using Microsoft.Data.SqlClient;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
+using TableMasterApi.DAL.Interfaces;
 
 namespace TableMasterApi.DAL
 {
-    public class ReviewDAL
+    /// <summary>
+    /// Data Access Layer pour la gestion des avis
+    /// </summary>
+    public class ReviewDAL : IReviewDAL
     {
         private readonly ConfigPerso _config;
         public ReviewDAL(ConfigPerso config)

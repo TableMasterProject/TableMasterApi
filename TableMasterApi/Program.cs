@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using TableMasterApi.DAL;
+using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 using TableMasterApi.Hubs;
@@ -40,7 +41,20 @@ builder.Services.Configure<ConfigPerso>(builder.Configuration.GetSection("Config
 builder.Services.AddSingleton(sp => builder.Configuration.GetSection("ConfigPerso").Get<ConfigPerso>()!);
 builder.Services.AddSingleton<JwtService>();
 builder.Services.AddSingleton<FcmService>();
-builder.Services.AddScoped<DeviceTokenDAL>();
+
+// ========== Injection de Dépendances pour tous les DAL ==========
+// Ajouter les services DAL avec leurs interfaces (Scoped = une nouvelle instance par requête)
+builder.Services.AddScoped<IAuthDAL, AuthDAL>();
+builder.Services.AddScoped<IUserDAL, UserDAL>();
+builder.Services.AddScoped<IRestaurantDAL, RestaurantDAL>();
+builder.Services.AddScoped<IMenuDAL, MenuDAL>();
+builder.Services.AddScoped<ITableDAL, TableDAL>();
+builder.Services.AddScoped<IReservationDAL, ReservationDAL>();
+builder.Services.AddScoped<IReviewDAL, ReviewDAL>();
+builder.Services.AddScoped<IDailyActivityDAL, DailyActivityDAL>();
+builder.Services.AddScoped<IClosedDayExceptionDAL, ClosedDayExceptionDAL>();
+builder.Services.AddScoped<IDeviceTokenDAL, DeviceTokenDAL>();
+// ====================================================
 
 // Ajout de SignalR
 builder.Services.AddSignalR();

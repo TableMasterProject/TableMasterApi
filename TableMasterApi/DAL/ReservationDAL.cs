@@ -2,10 +2,14 @@
 using Microsoft.Data.SqlClient;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
+using TableMasterApi.DAL.Interfaces;
 
 namespace TableMasterApi.DAL
 {
-    public class ReservationDAL
+    /// <summary>
+    /// Data Access Layer pour la gestion des réservations
+    /// </summary>
+    public class ReservationDAL : IReservationDAL
     {
         private readonly ConfigPerso _config;
 
@@ -37,7 +41,7 @@ namespace TableMasterApi.DAL
             }
         }
 
-        public async Task<ReservationOut?> updateReservationStatus(long id, ReservationStatus reservationStatus)
+        public async Task<ReservationOut?> UpdateReservationStatus(long id, ReservationStatus reservationStatus)
         {
             using (var connection = new SqlConnection(_config.ConnectionString))
             {
@@ -65,7 +69,7 @@ namespace TableMasterApi.DAL
             }
         }
 
-        internal async Task<IEnumerable<ReservationOut>> GetReservations(SearchReservations searchReservations)
+        public async Task<IEnumerable<ReservationOut>> GetReservations(SearchReservations searchReservations)
         {
             List<string> filters = ["1=1"];
             if (searchReservations.Statuses != null && searchReservations.Statuses.Any())
@@ -138,7 +142,7 @@ namespace TableMasterApi.DAL
                 return reservations;
             }
         }
-        internal async Task<ReservationOut?> GetMyReservationById(long id)
+        public async Task<ReservationOut?> GetMyReservationById(long id)
         {
             var query = @"
                 SELECT 

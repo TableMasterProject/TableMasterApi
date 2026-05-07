@@ -1,8 +1,7 @@
 ﻿using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
-using TableMasterApi.DAL;
+using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 
@@ -13,12 +12,12 @@ namespace TableMasterApi.Controllers
     [ApiController]
     public class ReviewController : ControllerBase
     {
-        private readonly ReviewDAL _reviewDAL;
+        private readonly IReviewDAL _reviewDAL;
         private readonly JwtService _jwtService;
-        public ReviewController(JwtService jwtService, IOptions<ConfigPerso> config)
+        public ReviewController(IReviewDAL reviewDAL, JwtService jwtService)
         {
             _jwtService = jwtService;
-            _reviewDAL = new ReviewDAL(config.Value);
+            _reviewDAL = reviewDAL;
         }
 
         [Authorize]

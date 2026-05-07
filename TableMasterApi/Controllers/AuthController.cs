@@ -1,9 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Text;
 using Asp.Versioning;
-using TableMasterApi.DAL;
+using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 
@@ -14,15 +13,15 @@ namespace TableMasterApi.Controllers
     [ApiController]
     public class AuthController : ControllerBase
     {
-        private readonly UserDAL _userDAL;
-        private readonly AuthDAL _authDAL;
+        private readonly IUserDAL _userDAL;
+        private readonly IAuthDAL _authDAL;
         private readonly JwtService _jwtService;
 
-        public AuthController(JwtService jwtService, IOptions<ConfigPerso> config)
+        public AuthController(IUserDAL userDAL, IAuthDAL authDAL, JwtService jwtService)
         {
             _jwtService = jwtService;
-            _userDAL = new UserDAL(config.Value);
-            _authDAL = new AuthDAL();
+            _userDAL = userDAL;
+            _authDAL = authDAL;
         }
 
         [HttpPost]

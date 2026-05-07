@@ -1,10 +1,14 @@
 ﻿using Dapper;
 using Microsoft.Data.SqlClient;
 using TableMasterApi.Model;
+using TableMasterApi.DAL.Interfaces;
 
 namespace TableMasterApi.DAL
 {
-    public class TableDAL
+    /// <summary>
+    /// Data Access Layer pour la gestion des tables
+    /// </summary>
+    public class TableDAL : ITableDAL
     {
         private readonly ConfigPerso _config;
 
