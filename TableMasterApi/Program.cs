@@ -25,9 +25,6 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Charger la configuration � partir du fichier appsettings.json
-builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (!string.IsNullOrEmpty(connectionString))
 {

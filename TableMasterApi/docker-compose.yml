@@ -10,6 +10,8 @@ services:
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: "${DB_PASSWORD}"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
     restart: always
     networks:
       - sqlserver-network
@@ -21,7 +23,8 @@ services:
       - sqlserver
     environment:
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__DefaultConnection=Server=TableMaster;Database=TableMaster;User Id=sa;Password=${DB_PASSWORD};Encrypt=False;TrustServerCertificate=False;
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=TableMaster;User Id=sa;Password=${DB_PASSWORD};Encrypt=False;TrustServerCertificate=True;
     ports:
       - "${API_PORT}:8080"
     restart: always
@@ -31,3 +34,6 @@ services:
 networks:
   sqlserver-network:
     driver: bridge
+
+volumes:
+  sqlserver-data:
