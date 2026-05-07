@@ -2,9 +2,9 @@ name: .NET API Tests & Build
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ Prod, Dev ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ Prod, Dev ]
 
 jobs:
   build-and-test:
