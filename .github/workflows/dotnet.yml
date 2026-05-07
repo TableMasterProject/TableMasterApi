@@ -13,6 +13,7 @@ jobs:
     strategy:
       matrix:
         dotnet-version: ['10.0.x']
+        include-prerelease: true 
     
     steps:
     - uses: actions/checkout@v4
@@ -23,10 +24,14 @@ jobs:
         dotnet-version: ${{ matrix.dotnet-version }}
     
     - name: Restore dependencies
-      run: dotnet restore
+      run: |
+        dotnet restore TableMasterApi/TableMasterApi.csproj
+        dotnet restore TableMasterApi.Tests/TableMasterApi.Tests.csproj
     
     - name: Build
-      run: dotnet build --no-restore --configuration Release
+      run: |
+        dotnet build TableMasterApi/TableMasterApi.csproj --no-restore --configuration Release
+        dotnet build TableMasterApi.Tests/TableMasterApi.Tests.csproj --no-restore --configuration Release
     
     - name: Run Unit Tests
       run: dotnet test TableMasterApi.Tests/TableMasterApi.Tests.csproj --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
@@ -38,8 +43,9 @@ jobs:
         name: test-results
         path: '**/test-results.trx'
     
+    # On publie uniquement l'API
     - name: Publish API
-      run: dotnet publish TableMasterApi/TableMasterApi.csproj -c Release -o ./publish
+      run: dotnet publish TableMasterApi/TableMasterApi.csproj -c Release -o ./publish --no-build
     
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
