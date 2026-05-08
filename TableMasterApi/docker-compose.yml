@@ -1,39 +1,46 @@
 version: '3.8'
 
 services:
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2025-latest
+  postgres:
+    image: postgres:18-alpine
     container_name: TableMasterDataBase-${NAME_ENV}
     hostname: TableMaster
     ports:
-      - "${DB_PORT}:1433"
+      - "${DB_PORT}:5432"
     environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "${DB_PASSWORD}"
+      POSTGRES_DB: "${DB_NAME:-TableMaster}"
+      POSTGRES_USER: "${DB_USER:-postgres}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
     volumes:
-      - sqlserver-data:/var/opt/mssql
+      - postgres18-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-TableMaster}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: always
     networks:
-      - sqlserver-network
+      - postgres-network
 
-  api:
-    build: .
-    container_name: TableMasterApi-${NAME_ENV}
-    depends_on:
-      - sqlserver
-    environment:
-      - ASPNETCORE_URLS=http://+:8080
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=TableMaster;User Id=sa;Password=${DB_PASSWORD};Encrypt=False;TrustServerCertificate=True;
-    ports:
-      - "${API_PORT}:8080"
-    restart: always
-    networks:
-      - sqlserver-network
+  # api:
+  #   build: .
+  #   container_name: TableMasterApi-${NAME_ENV}
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   environment:
+  #     - ASPNETCORE_URLS=http://+:8080
+  #     - ASPNETCORE_ENVIRONMENT=Production
+  #     - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${DB_NAME:-TableMaster};Username=${DB_USER:-postgres};Password=${DB_PASSWORD};
+  #   ports:
+  #     - "${API_PORT}:8080"
+  #   restart: always
+  #   networks:
+  #     - postgres-network
 
 networks:
-  sqlserver-network:
+  postgres-network:
     driver: bridge
 
 volumes:
-  sqlserver-data:
+  postgres18-data:

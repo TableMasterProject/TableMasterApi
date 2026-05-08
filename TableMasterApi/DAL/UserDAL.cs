@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using TableMasterApi.Model;
 using TableMasterApi.DAL.Interfaces;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using Microsoft.AspNetCore.Identity;
 
 namespace TableMasterApi.DAL
@@ -23,16 +23,16 @@ namespace TableMasterApi.DAL
         // Méthode pour récupérer un utilisateur par son ID
         public async Task<UserOut?> GetUserById(long id)
         {
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = @"
                     SELECT 
-                        u.Id, u.Email, u.Password, u.FirstName, u.LastName, u.AccountType, u.CreatedAt,
-                        r.Id AS RestaurantId
-                    FROM [User] u
-                    LEFT JOIN [Restaurant] r ON u.Id = r.UserId
-                    WHERE u.Id = @Id";
+                        u.""Id"", u.""Email"", u.""Password"", u.""FirstName"", u.""LastName"", u.""AccountType"", u.""CreatedAt"",
+                        r.""Id"" AS ""RestaurantId""
+                    FROM ""User"" u
+                    LEFT JOIN ""Restaurant"" r ON u.""Id"" = r.""UserId""
+                    WHERE u.""Id"" = @Id";
                 
                 var result = await connection.QueryAsync<UserOut>(query, new { Id = id });
                 UserOut? user = result.FirstOrDefault();
@@ -42,16 +42,16 @@ namespace TableMasterApi.DAL
 
         public async Task<UserOut?> GetUserByEmail(string email)
         {
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 connection.Open();
                 var query = @"
                     SELECT 
-                        u.Id, u.Email, u.Password, u.FirstName, u.LastName, u.AccountType, u.CreatedAt,
-                        r.Id AS RestaurantId
-                    FROM [User] u
-                    LEFT JOIN [Restaurant] r ON u.Id = r.UserId
-                    WHERE u.Email = @Email";
+                        u.""Id"", u.""Email"", u.""Password"", u.""FirstName"", u.""LastName"", u.""AccountType"", u.""CreatedAt"",
+                        r.""Id"" AS ""RestaurantId""
+                    FROM ""User"" u
+                    LEFT JOIN ""Restaurant"" r ON u.""Id"" = r.""UserId""
+                    WHERE u.""Email"" = @Email";
                 
                 var result = await connection.QueryAsync<UserOut>(query, new { Email = email });
                 UserOut? user = result.FirstOrDefault();
@@ -68,14 +68,14 @@ namespace TableMasterApi.DAL
             // Mettre à jour le mot de passe haché dans l'objet utilisateur
             user.Password = hashedPassword;
 
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 connection.Open();
 
-                var query = "INSERT INTO [User] (Email, Password, FirstName, LastName, AccountType) " +
-                            "OUTPUT INSERTED.Id, INSERTED.Email, INSERTED.Password, INSERTED.FirstName, " +
-                            "INSERTED.LastName, INSERTED.AccountType, INSERTED.CreatedAt " +
-                            "VALUES (@Email, @Password, @FirstName, @LastName, @AccountType)";
+                var query = @"
+                    INSERT INTO ""User"" (""Email"", ""Password"", ""FirstName"", ""LastName"", ""AccountType"")
+                    VALUES (@Email, @Password, @FirstName, @LastName, @AccountType)
+                    RETURNING ""Id"", ""Email"", ""Password"", ""FirstName"", ""LastName"", ""AccountType"", ""CreatedAt""";
 
                 var insertedUser = await connection.QuerySingleAsync<UserOut>(query, user);
                 return insertedUser;
@@ -84,15 +84,18 @@ namespace TableMasterApi.DAL
 
         public async Task<UserOut> PutUser(long idUser, UserIn user)
         {
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 connection.Open();
 
-                var query = "UPDATE [User] SET Email = @Email, FirstName = @FirstName, " +
-                            "LastName = @LastName, AccountType = @AccountType " +
-                            "OUTPUT INSERTED.Id, INSERTED.Email, INSERTED.Password, INSERTED.FirstName, " +
-                            "INSERTED.LastName, INSERTED.AccountType, INSERTED.CreatedAt " +
-                            "WHERE Id = @IdUser";
+                var query = @"
+                    UPDATE ""User""
+                    SET ""Email"" = @Email,
+                        ""FirstName"" = @FirstName,
+                        ""LastName"" = @LastName,
+                        ""AccountType"" = @AccountType
+                    WHERE ""Id"" = @IdUser
+                    RETURNING ""Id"", ""Email"", ""Password"", ""FirstName"", ""LastName"", ""AccountType"", ""CreatedAt""";
 
                 // Ajout de l'IdUser pour la mise à jour
                 var updatedUser = await connection.QuerySingleAsync<UserOut>(query, new { IdUser = idUser, user.Email, user.FirstName, user.LastName, user.AccountType });
@@ -105,12 +108,11 @@ namespace TableMasterApi.DAL
             var passwordHasher = new PasswordHasher<UserOut>();
             var hashedPassword = passwordHasher.HashPassword(user, newPassword);
 
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 connection.Open();
 
-                var query = "UPDATE [User] SET Password = @hashedPassword " +
-                            "WHERE Id = @IdUser";
+                var query = @"UPDATE ""User"" SET ""Password"" = @hashedPassword WHERE ""Id"" = @IdUser";
 
                 // Utilise Execute pour une mise à jour
                 var rowsAffected = await connection.ExecuteAsync(query, new { IdUser = user.Id, hashedPassword });
@@ -121,11 +123,11 @@ namespace TableMasterApi.DAL
         }
         public async Task<bool> DeletePassword(long id)
         {
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 connection.Open();
 
-                var query = "DELETE FROM [User] WHERE Id = @IdUser";
+                var query = @"DELETE FROM ""User"" WHERE ""Id"" = @IdUser";
 
                 // Execute la requête de suppression
                 var rowsAffected = await connection.ExecuteAsync(query, new { IdUser = id });
@@ -137,11 +139,11 @@ namespace TableMasterApi.DAL
 
         public async Task<bool> SaveRefreshToken(long userId, string hashedToken, DateTime expiry)
         {
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 connection.Open();
 
-                var query = @"INSERT INTO UserRefreshTokens (UserId, TokenHash, ExpiryDate) 
+                var query = @"INSERT INTO ""UserRefreshTokens"" (""UserId"", ""TokenHash"", ""ExpiryDate"") 
                      VALUES (@UserId, @TokenHash, @ExpiryDate)";
 
                 // Execute la requête de suppression
@@ -154,12 +156,12 @@ namespace TableMasterApi.DAL
 
         public async Task<long?> GetUserIdByRefreshToken(string hashedToken)
         {
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 connection.Open();
 
-                string query = @"SELECT UserId FROM UserRefreshTokens 
-                     WHERE TokenHash = @TokenHash AND ExpiryDate > GETDATE()";
+                string query = @"SELECT ""UserId"" FROM ""UserRefreshTokens"" 
+                     WHERE ""TokenHash"" = @TokenHash AND ""ExpiryDate"" > CURRENT_TIMESTAMP";
 
                 // Execute la requête
                 IEnumerable<long> IEnumerableuser = await connection.QueryAsync<long>(query, new { TokenHash = hashedToken });
@@ -170,11 +172,11 @@ namespace TableMasterApi.DAL
         
         public async Task<bool> DeleteRefreshToken(string hashedToken)
         {
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 await connection.OpenAsync();
 
-                var query = "DELETE FROM UserRefreshTokens WHERE TokenHash = @TokenHash";
+                var query = @"DELETE FROM ""UserRefreshTokens"" WHERE ""TokenHash"" = @TokenHash";
 
                 var rowsAffected = await connection.ExecuteAsync(query, new { TokenHash = hashedToken });
 
@@ -184,11 +186,11 @@ namespace TableMasterApi.DAL
 
         public async Task<bool> DeleteAllRefreshTokensForUser(long userId)
         {
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 await connection.OpenAsync();
 
-                var query = "DELETE FROM UserRefreshTokens WHERE UserId = @UserId";
+                var query = @"DELETE FROM ""UserRefreshTokens"" WHERE ""UserId"" = @UserId";
 
                 var rowsAffected = await connection.ExecuteAsync(query, new { UserId = userId });
 

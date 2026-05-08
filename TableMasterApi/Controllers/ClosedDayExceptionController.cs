@@ -1,7 +1,7 @@
 ﻿using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
@@ -34,7 +34,7 @@ namespace TableMasterApi.Controllers
                 var result = await _dal.GetByRestaurantAsync(restaurantId);
                 return Ok(result);
             }
-            catch (SqlException e)
+            catch (PostgresException e)
             {
                 return StatusCode(500, e.Message);
             }
@@ -55,7 +55,7 @@ namespace TableMasterApi.Controllers
                 var result = await _dal.InsertAsync(input);
                 return Ok(result);
             }
-            catch (SqlException e)
+            catch (PostgresException e)
             {
                 return StatusCode(500, e.Message);
             }
@@ -90,7 +90,7 @@ namespace TableMasterApi.Controllers
                 if (result == null) return NotFound();
                 return Ok(result);
             }
-            catch (SqlException e)
+            catch (PostgresException e)
             {
                 return StatusCode(500, e.Message);
             }
@@ -120,7 +120,7 @@ namespace TableMasterApi.Controllers
                 var success = await _dal.DeleteAsync(id);
                 return success ? Ok() : NotFound();
             }
-            catch (SqlException e)
+            catch (PostgresException e)
             {
                 return StatusCode(500, e.Message);
             }

@@ -1,5 +1,5 @@
 using Dapper;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using System.Linq;
 using TableMasterApi.Model;
 using TableMasterApi.DAL.Interfaces;
@@ -23,18 +23,16 @@ namespace TableMasterApi.DAL
             if (string.IsNullOrWhiteSpace(deviceToken))
                 return false;
 
-            using var connection = new SqlConnection(_connectionString);
+            using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
             var query = @"
-IF EXISTS (SELECT 1 FROM UserDeviceTokens WHERE UserId = @UserId AND DeviceToken = @DeviceToken)
-    UPDATE UserDeviceTokens
-    SET DevicePlatform = @DevicePlatform,
-        LastSeenAt = GETDATE()
-    WHERE UserId = @UserId AND DeviceToken = @DeviceToken;
-ELSE
-    INSERT INTO UserDeviceTokens (UserId, DeviceToken, DevicePlatform, LastSeenAt)
-    VALUES (@UserId, @DeviceToken, @DevicePlatform, GETDATE());";
+INSERT INTO ""UserDeviceTokens"" (""UserId"", ""DeviceToken"", ""DevicePlatform"", ""LastSeenAt"")
+VALUES (@UserId, @DeviceToken, @DevicePlatform, CURRENT_TIMESTAMP)
+ON CONFLICT (""UserId"", ""DeviceToken"")
+DO UPDATE SET
+    ""DevicePlatform"" = EXCLUDED.""DevicePlatform"",
+    ""LastSeenAt"" = CURRENT_TIMESTAMP;";
 
             var rows = await connection.ExecuteAsync(query, new { UserId = userId, DeviceToken = deviceToken, DevicePlatform = devicePlatform });
             return rows > 0;
@@ -45,11 +43,11 @@ ELSE
             if (userIds == null || !userIds.Any())
                 return Enumerable.Empty<string>();
 
-            using var connection = new SqlConnection(_connectionString);
+            using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            var query = "SELECT DeviceToken FROM UserDeviceTokens WHERE UserId IN @UserIds";
-            return await connection.QueryAsync<string>(query, new { UserIds = userIds });
+            var query = @"SELECT ""DeviceToken"" FROM ""UserDeviceTokens"" WHERE ""UserId"" = ANY(@UserIds)";
+            return await connection.QueryAsync<string>(query, new { UserIds = userIds.ToArray() });
         }
 
         public async Task<bool> DeleteDeviceTokenAsync(long userId, string deviceToken)
@@ -57,10 +55,10 @@ ELSE
             if (string.IsNullOrWhiteSpace(deviceToken))
                 return false;
 
-            using var connection = new SqlConnection(_connectionString);
+            using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-            var query = "DELETE FROM UserDeviceTokens WHERE UserId = @UserId AND DeviceToken = @DeviceToken";
+            var query = @"DELETE FROM ""UserDeviceTokens"" WHERE ""UserId"" = @UserId AND ""DeviceToken"" = @DeviceToken";
             var rows = await connection.ExecuteAsync(query, new { UserId = userId, DeviceToken = deviceToken });
             return rows > 0;
         }

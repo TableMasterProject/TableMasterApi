@@ -1,5 +1,5 @@
 ﻿using Dapper;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 using TableMasterApi.DAL.Interfaces;
@@ -19,16 +19,16 @@ namespace TableMasterApi.DAL
 
         public async Task<IEnumerable<ReviewOut>> GetByIdRestaurant(long idRestaurant, SearchReviews searchReviews)
         {
-            var query = @"SELECT * FROM review WHERE RestaurantId = @RestaurantId
-                            ORDER BY Id
-                            OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            var query = @"SELECT * FROM ""Review"" WHERE ""RestaurantId"" = @RestaurantId
+                            ORDER BY ""Id""
+                            LIMIT @PageSize OFFSET @Offset;";
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 IEnumerable<ReviewOut> ennum = await connection.QueryAsync<ReviewOut>(query, new
                 {
                     RestaurantId = idRestaurant,
-                    searchReviews.Offset,
-                    searchReviews.PageSize
+                    Offset = searchReviews.Offset ?? 0,
+                    PageSize = searchReviews.PageSize ?? 20
                 });
 
                 return ennum;
@@ -36,16 +36,16 @@ namespace TableMasterApi.DAL
         }
         public async Task<IEnumerable<ReviewOut>> GetMy(long idUser, SearchReviews searchReviews)
         {
-            var query = @"SELECT * FROM review WHERE UserId = @UserId
-                            ORDER BY Id
-                            OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;";
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            var query = @"SELECT * FROM ""Review"" WHERE ""UserId"" = @UserId
+                            ORDER BY ""Id""
+                            LIMIT @PageSize OFFSET @Offset;";
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 IEnumerable<ReviewOut> ennum = await connection.QueryAsync<ReviewOut>(query, new
                 {
                     UserId = idUser,
-                    searchReviews.Offset,
-                    searchReviews.PageSize
+                    Offset = searchReviews.Offset ?? 0,
+                    PageSize = searchReviews.PageSize ?? 20
                 });
 
                 return ennum;
@@ -54,12 +54,11 @@ namespace TableMasterApi.DAL
 
         public async Task<ReviewOut> Add(long idUser, ReviewIn review)
         {
-            var query = @"INSERT INTO Review (UserId, RestaurantId, Rating, Comment)
-                  OUTPUT INSERTED.Id, INSERTED.UserId, INSERTED.RestaurantId, INSERTED.Rating, 
-                         INSERTED.Comment, INSERTED.CreatedAt
-                  VALUES (@UserId, @RestaurantId, @Rating, @Comment);";
+            var query = @"INSERT INTO ""Review"" (""UserId"", ""RestaurantId"", ""Rating"", ""Comment"")
+                  VALUES (@UserId, @RestaurantId, @Rating, @Comment)
+                  RETURNING ""Id"", ""UserId"", ""RestaurantId"", ""Rating"", ""Comment"", ""CreatedAt"";";
 
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 return await connection.QuerySingleAsync<ReviewOut>(query, new
                 {
@@ -73,13 +72,12 @@ namespace TableMasterApi.DAL
 
         public async Task<ReviewOut?> Update(long idUser, long reviewId, ReviewIn review)
         {
-            var query = @"UPDATE Review 
-                  SET Rating = @Rating, Comment = @Comment 
-                  OUTPUT INSERTED.Id, INSERTED.UserId, INSERTED.RestaurantId, INSERTED.Rating, 
-                         INSERTED.Comment, INSERTED.CreatedAt
-                  WHERE Id = @ReviewId AND UserId = @UserId;";
+            var query = @"UPDATE ""Review"" 
+                  SET ""Rating"" = @Rating, ""Comment"" = @Comment 
+                  WHERE ""Id"" = @ReviewId AND ""UserId"" = @UserId
+                  RETURNING ""Id"", ""UserId"", ""RestaurantId"", ""Rating"", ""Comment"", ""CreatedAt"";";
 
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 return await connection.QuerySingleOrDefaultAsync<ReviewOut>(query, new
                 {
@@ -93,10 +91,10 @@ namespace TableMasterApi.DAL
 
         public async Task<bool> Delete(long idUser, long reviewId)
         {
-            var query = @"DELETE FROM Review 
-                  WHERE Id = @ReviewId AND UserId = @UserId;";
+            var query = @"DELETE FROM ""Review"" 
+                  WHERE ""Id"" = @ReviewId AND ""UserId"" = @UserId;";
 
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 var affectedRows = await connection.ExecuteAsync(query, new
                 {

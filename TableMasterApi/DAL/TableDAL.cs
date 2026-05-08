@@ -1,5 +1,5 @@
 ﻿using Dapper;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using TableMasterApi.Model;
 using TableMasterApi.DAL.Interfaces;
 
@@ -19,15 +19,15 @@ namespace TableMasterApi.DAL
         public async Task<TableEntityOut?> GetTablesById(long TableId)
         {
             var query = @"
-                  SELECT [Id]
-                      ,[RestaurantId]
-                      ,[TableNumber]
-                      ,[NumberOfSeats]
-                      ,[CreatedAt]
-                  FROM [TableMaster].[dbo].[TableEntity]
-                  where [Id] = @Id
-                  ORDER BY [TableNumber] ASC;";
-            using (var connection = new SqlConnection(_config.ConnectionString))
+                  SELECT ""Id"",
+                         ""RestaurantId"",
+                         ""TableNumber"",
+                         ""NumberOfSeats"",
+                         ""CreatedAt""
+                  FROM ""TableEntity""
+                  WHERE ""Id"" = @Id
+                  ORDER BY ""TableNumber"" ASC;";
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 var result = await connection.QuerySingleOrDefaultAsync<TableEntityOut>(query,
                 new
@@ -40,15 +40,15 @@ namespace TableMasterApi.DAL
         public async Task<IEnumerable<TableEntityOut>> GetTablesByRestaurantAsync(long restaurantId)
         {
             var query = @"
-                  SELECT [Id]
-                      ,[RestaurantId]
-                      ,[TableNumber]
-                      ,[NumberOfSeats]
-                      ,[CreatedAt]
-                  FROM [TableMaster].[dbo].[TableEntity]
-                  where [RestaurantId] = @RestaurantId
-                  ORDER BY [TableNumber] ASC;";
-            using (var connection = new SqlConnection(_config.ConnectionString))
+                  SELECT ""Id"",
+                         ""RestaurantId"",
+                         ""TableNumber"",
+                         ""NumberOfSeats"",
+                         ""CreatedAt""
+                  FROM ""TableEntity""
+                  WHERE ""RestaurantId"" = @RestaurantId
+                  ORDER BY ""TableNumber"" ASC;";
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 var result = await connection.QueryAsync<TableEntityOut>(query, 
                 new {
@@ -60,16 +60,10 @@ namespace TableMasterApi.DAL
         public async Task<TableEntityOut?> CreateTable(TableEntityIn table)
         {
             var query = @"
-                    INSERT INTO [TableMaster].[dbo].[TableEntity] ([RestaurantId], [TableNumber], [NumberOfSeats])
-                    OUTPUT 
-                        INSERTED.Id, 
-                        INSERTED.[RestaurantId],
-                        INSERTED.[TableNumber],
-                        INSERTED.RestaurantId,
-                        INSERTED.[NumberOfSeats],
-                        INSERTED.CreatedAt
-                    VALUES (@RestaurantId, @TableNumber, @NumberOfSeats);";
-            using (var connection = new SqlConnection(_config.ConnectionString))
+                    INSERT INTO ""TableEntity"" (""RestaurantId"", ""TableNumber"", ""NumberOfSeats"")
+                    VALUES (@RestaurantId, @TableNumber, @NumberOfSeats)
+                    RETURNING ""Id"", ""RestaurantId"", ""TableNumber"", ""NumberOfSeats"", ""CreatedAt"";";
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 var result = await connection.QuerySingleOrDefaultAsync<TableEntityOut>(query,table);
                 return result;
@@ -78,19 +72,14 @@ namespace TableMasterApi.DAL
         public async Task<TableEntityOut?> UpdateTable(long tableId, TableEntityIn table)
         {
             var query = @"
-                UPDATE [TableMaster].[dbo].[TableEntity]
+                UPDATE ""TableEntity""
                 SET 
-                    [TableNumber] = @TableNumber,
-                    [NumberOfSeats] = @NumberOfSeats
-                OUTPUT 
-                    INSERTED.Id, 
-                    INSERTED.[RestaurantId],
-                    INSERTED.[TableNumber],
-                    INSERTED.[NumberOfSeats],
-                    INSERTED.CreatedAt
-                WHERE Id = @TableId;";
+                    ""TableNumber"" = @TableNumber,
+                    ""NumberOfSeats"" = @NumberOfSeats
+                WHERE ""Id"" = @TableId
+                RETURNING ""Id"", ""RestaurantId"", ""TableNumber"", ""NumberOfSeats"", ""CreatedAt"";";
 
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 var parameters = new
                 {
@@ -106,9 +95,9 @@ namespace TableMasterApi.DAL
 
         public async Task<bool> DeleteTable(long tableId)
         {
-            var query = @"DELETE FROM [TableMaster].[dbo].[TableEntity] WHERE Id = @TableId;";
+            var query = @"DELETE FROM ""TableEntity"" WHERE ""Id"" = @TableId;";
 
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 var affectedRows = await connection.ExecuteAsync(query, new { TableId = tableId });
                 return affectedRows > 0;
@@ -118,19 +107,14 @@ namespace TableMasterApi.DAL
 
         public async Task<IEnumerable<TableEntityOut>> ReplaceTablesAsync(long restaurantId, IEnumerable<TableEntityIn> tables)
         {
-            var deleteQuery = "DELETE FROM [TableMaster].[dbo].[TableEntity] WHERE [RestaurantId] = @RestaurantId;";
+            var deleteQuery = @"DELETE FROM ""TableEntity"" WHERE ""RestaurantId"" = @RestaurantId;";
 
             var insertQuery = @"
-        INSERT INTO [TableMaster].[dbo].[TableEntity] ([RestaurantId], [TableNumber], [NumberOfSeats])
-        OUTPUT 
-            INSERTED.Id, 
-            INSERTED.[RestaurantId],
-            INSERTED.[TableNumber],
-            INSERTED.[NumberOfSeats],
-            INSERTED.CreatedAt
-        VALUES (@RestaurantId, @TableNumber, @NumberOfSeats);";
+        INSERT INTO ""TableEntity"" (""RestaurantId"", ""TableNumber"", ""NumberOfSeats"")
+        VALUES (@RestaurantId, @TableNumber, @NumberOfSeats)
+        RETURNING ""Id"", ""RestaurantId"", ""TableNumber"", ""NumberOfSeats"", ""CreatedAt"";";
 
-            using (var connection = new SqlConnection(_config.ConnectionString))
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 await connection.OpenAsync();
                 using (var transaction = connection.BeginTransaction())

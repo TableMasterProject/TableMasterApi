@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using Microsoft.Extensions.Options;
 using System.Collections.Generic;
 using System.Security.Cryptography;
@@ -79,9 +79,9 @@ namespace TableMasterApi.Controllers
 
                 return Ok(userPut);
             }
-            catch (SqlException e)
+            catch (PostgresException e)
             {
-                if (e.Number == 2627)
+                if (e.SqlState == PostgresErrorCodes.UniqueViolation)
                 {
                     return StatusCode(403, "L'Email existe deja dans la base");
                 }
@@ -163,9 +163,9 @@ namespace TableMasterApi.Controllers
 
                 return Ok(loginUserOut);
             }
-            catch (SqlException e)
+            catch (PostgresException e)
             {
-                if (e.Number == 2627)
+                if (e.SqlState == PostgresErrorCodes.UniqueViolation)
                 {
                     return StatusCode(403, "L'Email existe deja dans la base");
                 }
@@ -190,7 +190,7 @@ namespace TableMasterApi.Controllers
 
                 return Ok(deleted);
             }
-            catch (SqlException e)
+            catch (PostgresException e)
             {
                 return StatusCode(500, e.Message);
             }

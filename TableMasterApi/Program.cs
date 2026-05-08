@@ -4,16 +4,19 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using TableMasterApi.DAL;
+using TableMasterApi.DAL.Handlers;
 using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 using TableMasterApi.Hubs;
 using DbUp;
-using DbUp.SqlServer;
+using DbUp.Postgresql;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 var builder = WebApplication.CreateBuilder(args);
+
+Dapper.SqlMapper.AddTypeHandler(new PostgresTimeSpanHandler());
 
 builder.Services.AddCors(options =>
 {
@@ -29,6 +32,10 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 if (!string.IsNullOrEmpty(connectionString))
 {
     builder.Configuration["ConfigPerso:ConnectionString"] = connectionString;
+}
+else
+{
+    throw new InvalidOperationException("La chaîne de connexion DefaultConnection est manquante.");
 }
 
 // Ajouter la configuration ConfigPerso
@@ -99,10 +106,10 @@ builder.Services.AddApiVersioning(options =>
 });
 
 Console.WriteLine("Vérification de la base de données...");
-EnsureDatabase.For.SqlDatabase(connectionString);
+EnsureDatabase.For.PostgresqlDatabase(connectionString);
 
 var upgrader = DeployChanges.To
-    .SqlDatabase(connectionString)
+    .PostgresqlDatabase(connectionString)
     .WithScriptsEmbeddedInAssembly(System.Reflection.Assembly.GetExecutingAssembly())
     .LogToConsole()
     .Build();
