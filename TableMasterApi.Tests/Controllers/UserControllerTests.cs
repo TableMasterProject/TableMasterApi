@@ -34,7 +34,6 @@ namespace TableMasterApi.Tests.Controllers
             {
                 Id = 42,
                 Email = input.Email,
-                Password = input.Password,
                 FirstName = input.FirstName,
                 LastName = input.LastName,
                 AccountType = input.AccountType,
@@ -59,7 +58,7 @@ namespace TableMasterApi.Tests.Controllers
             payload.User.Email.Should().Be(createdUser.Email);
             payload.AccessToken.Should().NotBeNullOrWhiteSpace();
             payload.RefreshToken.Should().NotBeNullOrWhiteSpace();
-            savedHash.Should().Be(payload.RefreshToken);
+            savedHash.Should().Be(_jwtService.HashToken(payload.RefreshToken));
             _jwtService.ExtractUserIdFromToken(payload.AccessToken).Should().Be(createdUser.Id);
 
             userDal.Verify(x => x.AddUser(input), Times.Once);
@@ -77,7 +76,7 @@ namespace TableMasterApi.Tests.Controllers
 
             ControllerTestHelper.SetBearerToken(controller, token);
 
-            var storedUser = new UserOut
+            var storedUser = new UserDb
             {
                 Id = userId,
                 Email = "password@example.com",
@@ -90,7 +89,7 @@ namespace TableMasterApi.Tests.Controllers
 
             userDal.Setup(x => x.GetUserById(userId)).ReturnsAsync(storedUser);
             authDal.Setup(x => x.VerifyPassword(storedUser.Password, "OldPassword!1")).Returns(true);
-            userDal.Setup(x => x.PutPassword(storedUser, "NewPassword!2")).ReturnsAsync(true);
+            userDal.Setup(x => x.PutPassword(storedUser.Id, "NewPassword!2")).ReturnsAsync(true);
 
             var result = await controller.PutPassword(new PasswordEntity
             {
@@ -103,7 +102,7 @@ namespace TableMasterApi.Tests.Controllers
 
             userDal.Verify(x => x.GetUserById(userId), Times.Once);
             authDal.Verify(x => x.VerifyPassword(storedUser.Password, "OldPassword!1"), Times.Once);
-            userDal.Verify(x => x.PutPassword(storedUser, "NewPassword!2"), Times.Once);
+            userDal.Verify(x => x.PutPassword(storedUser.Id, "NewPassword!2"), Times.Once);
         }
 
         [Fact]

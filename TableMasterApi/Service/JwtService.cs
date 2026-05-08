@@ -8,8 +8,6 @@ using TableMasterApi.Model;
 
 namespace TableMasterApi.Service
 {
-    
-
     public class JwtService
     {
         private readonly string _secretKey;
@@ -21,24 +19,30 @@ namespace TableMasterApi.Service
             _secretKey = jwtSettings.Value.SecretKey;
             _issuer = jwtSettings.Value.Issuer;
             _audience = jwtSettings.Value.Audience;
+
+            if (string.IsNullOrWhiteSpace(_secretKey) || Encoding.UTF8.GetByteCount(_secretKey) < 32)
+            {
+                throw new InvalidOperationException("ConfigPerso:SecretKey doit contenir au moins 32 octets.");
+            }
         }
 
-        public string ExtractTokenFromAuthorization(string authorizationHeader)
+        public string ExtractTokenFromAuthorization(string? authorizationHeader)
         {
-
             if (string.IsNullOrEmpty(authorizationHeader) || !authorizationHeader.StartsWith("Bearer "))
             {
-                return "";
+                return string.Empty;
             }
 
-            var token = authorizationHeader.Substring("Bearer ".Length).Trim();
-            return token;
+            return authorizationHeader["Bearer ".Length..].Trim();
         }
+
         public long ExtractUserIdFromToken(string token)
         {
             var tokenHandler = new JwtSecurityTokenHandler();
             var jsonToken = tokenHandler.ReadToken(token) as JwtSecurityToken;
-            var userId = jsonToken?.Claims.First(claim => claim.Type == "UserId").Value;
+            var userId = jsonToken?.Claims.FirstOrDefault(claim => claim.Type == "UserId")?.Value
+                ?? jsonToken?.Claims.FirstOrDefault(claim => claim.Type == ClaimTypes.NameIdentifier)?.Value
+                ?? jsonToken?.Claims.FirstOrDefault(claim => claim.Type == JwtRegisteredClaimNames.Sub)?.Value;
 
             if (long.TryParse(userId, out var id))
             {
@@ -47,6 +51,7 @@ namespace TableMasterApi.Service
 
             throw new SecurityTokenException("Token invalide");
         }
+
         public string GenerateAccessToken(long userId)
         {
             var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
@@ -54,9 +59,10 @@ namespace TableMasterApi.Service
 
             var claims = new[]
             {
-                new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),  // L'ID de l'utilisateur dans les claims
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()), // Un identifiant unique pour chaque token
-                new Claim("UserId", userId.ToString())  // Vous pouvez aussi ajouter des claims personnalisés
+                new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
+                new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                new Claim("UserId", userId.ToString())
             };
 
             var token = new JwtSecurityToken(
@@ -69,13 +75,12 @@ namespace TableMasterApi.Service
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+
         public string GenerateRefreshToken()
         {
             var randomNumber = new byte[64];
             using var rng = RandomNumberGenerator.Create();
             rng.GetBytes(randomNumber);
-    
-            // On retourne le token en clair (Base64) pour le client Flutter
             return Convert.ToBase64String(randomNumber);
         }
 

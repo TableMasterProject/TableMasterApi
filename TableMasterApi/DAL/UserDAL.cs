@@ -21,7 +21,7 @@ namespace TableMasterApi.DAL
         }
 
         // Méthode pour récupérer un utilisateur par son ID
-        public async Task<UserOut?> GetUserById(long id)
+        public async Task<UserDb?> GetUserById(long id)
         {
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
@@ -34,13 +34,13 @@ namespace TableMasterApi.DAL
                     LEFT JOIN ""Restaurant"" r ON u.""Id"" = r.""UserId""
                     WHERE u.""Id"" = @Id";
                 
-                var result = await connection.QueryAsync<UserOut>(query, new { Id = id });
-                UserOut? user = result.FirstOrDefault();
+                var result = await connection.QueryAsync<UserDb>(query, new { Id = id });
+                UserDb? user = result.FirstOrDefault();
                 return user;
             }
         }
 
-        public async Task<UserOut?> GetUserByEmail(string email)
+        public async Task<UserDb?> GetUserByEmail(string email)
         {
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
@@ -53,8 +53,8 @@ namespace TableMasterApi.DAL
                     LEFT JOIN ""Restaurant"" r ON u.""Id"" = r.""UserId""
                     WHERE u.""Email"" = @Email";
                 
-                var result = await connection.QueryAsync<UserOut>(query, new { Email = email });
-                UserOut? user = result.FirstOrDefault();
+                var result = await connection.QueryAsync<UserDb>(query, new { Email = email });
+                UserDb? user = result.FirstOrDefault();
                 return user;
             }
         }
@@ -75,7 +75,7 @@ namespace TableMasterApi.DAL
                 var query = @"
                     INSERT INTO ""User"" (""Email"", ""Password"", ""FirstName"", ""LastName"", ""AccountType"")
                     VALUES (@Email, @Password, @FirstName, @LastName, @AccountType)
-                    RETURNING ""Id"", ""Email"", ""Password"", ""FirstName"", ""LastName"", ""AccountType"", ""CreatedAt""";
+                    RETURNING ""Id"", ""Email"", ""FirstName"", ""LastName"", ""AccountType"", ""CreatedAt""";
 
                 var insertedUser = await connection.QuerySingleAsync<UserOut>(query, user);
                 return insertedUser;
@@ -95,7 +95,7 @@ namespace TableMasterApi.DAL
                         ""LastName"" = @LastName,
                         ""AccountType"" = @AccountType
                     WHERE ""Id"" = @IdUser
-                    RETURNING ""Id"", ""Email"", ""Password"", ""FirstName"", ""LastName"", ""AccountType"", ""CreatedAt""";
+                    RETURNING ""Id"", ""Email"", ""FirstName"", ""LastName"", ""AccountType"", ""CreatedAt""";
 
                 // Ajout de l'IdUser pour la mise à jour
                 var updatedUser = await connection.QuerySingleAsync<UserOut>(query, new { IdUser = idUser, user.Email, user.FirstName, user.LastName, user.AccountType });
@@ -103,10 +103,10 @@ namespace TableMasterApi.DAL
             }
         }
 
-        public async Task<bool> PutPassword(UserOut user, string newPassword)
+        public async Task<bool> PutPassword(long userId, string newPassword)
         {
-            var passwordHasher = new PasswordHasher<UserOut>();
-            var hashedPassword = passwordHasher.HashPassword(user, newPassword);
+            var passwordHasher = new PasswordHasher<UserIn>();
+            var hashedPassword = passwordHasher.HashPassword(null!, newPassword);
 
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
@@ -115,7 +115,7 @@ namespace TableMasterApi.DAL
                 var query = @"UPDATE ""User"" SET ""Password"" = @hashedPassword WHERE ""Id"" = @IdUser";
 
                 // Utilise Execute pour une mise à jour
-                var rowsAffected = await connection.ExecuteAsync(query, new { IdUser = user.Id, hashedPassword });
+                var rowsAffected = await connection.ExecuteAsync(query, new { IdUser = userId, hashedPassword });
 
                 // Si aucune ligne n'a été affectée, la mise à jour n'a pas eu lieu
                 return rowsAffected > 0;

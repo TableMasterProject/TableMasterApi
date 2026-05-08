@@ -150,7 +150,6 @@ namespace TableMasterApi.DAL
                 U.""FirstName"", 
                 U.""LastName"", 
                 U.""Email"", 
-                U.""Password"", 
                 U.""AccountType"", 
                 U.""CreatedAt"",
                 T.""Id"" AS ""Id"",

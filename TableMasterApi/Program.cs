@@ -1,53 +1,90 @@
-using Asp.Versioning;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.SignalR;
-using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.Threading.RateLimiting;
+using Asp.Versioning;
+using DbUp;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using TableMasterApi.DAL;
 using TableMasterApi.DAL.Handlers;
 using TableMasterApi.DAL.Interfaces;
+using TableMasterApi.Hubs;
+using TableMasterApi.Middleware;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
-using TableMasterApi.Hubs;
-using DbUp;
-using DbUp.Postgresql;
-using Microsoft.OpenApi.Models;
-using Swashbuckle.AspNetCore.SwaggerGen;
 
 var builder = WebApplication.CreateBuilder(args);
 
 Dapper.SqlMapper.AddTypeHandler(new PostgresTimeSpanHandler());
 
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException("ConnectionStrings:DefaultConnection est manquante. Utilisez les variables d'environnement ou User Secrets.");
+}
+
+builder.Configuration["ConfigPerso:ConnectionString"] = connectionString;
+
+var configPerso = builder.Configuration.GetSection("ConfigPerso").Get<ConfigPerso>()
+    ?? throw new InvalidOperationException("La section ConfigPerso est manquante.");
+
+configPerso.ConnectionString = connectionString;
+
+if (string.IsNullOrWhiteSpace(configPerso.SecretKey) || Encoding.UTF8.GetByteCount(configPerso.SecretKey) < 32)
+{
+    throw new InvalidOperationException("ConfigPerso:SecretKey doit contenir au moins 32 octets.");
+}
+
+if (string.IsNullOrWhiteSpace(configPerso.Issuer) || string.IsNullOrWhiteSpace(configPerso.Audience))
+{
+    throw new InvalidOperationException("ConfigPerso:Issuer et ConfigPerso:Audience sont obligatoires.");
+}
+
+builder.Services.Configure<ConfigPerso>(builder.Configuration.GetSection("ConfigPerso"));
+builder.Services.AddSingleton(configPerso);
+builder.Services.AddSingleton<JwtService>();
+builder.Services.AddSingleton<FcmService>();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddSingleton<IDbConnectionFactory, PostgresConnectionFactory>();
+builder.Services.AddHttpClient<GoogleMapsService>();
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("ConfiguredOrigins", policy =>
     {
-        policy.AllowAnyOrigin()
+        var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+
+        if (allowedOrigins.Length == 0 && builder.Environment.IsDevelopment())
+        {
+            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+            return;
+        }
+
+        if (allowedOrigins.Length == 0)
+        {
+            throw new InvalidOperationException("Cors:AllowedOrigins doit etre configure hors developpement.");
+        }
+
+        policy.WithOrigins(allowedOrigins)
             .AllowAnyMethod()
-            .AllowAnyHeader();
+            .AllowAnyHeader()
+            .AllowCredentials();
     });
 });
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-if (!string.IsNullOrEmpty(connectionString))
+builder.Services.AddRateLimiter(options =>
 {
-    builder.Configuration["ConfigPerso:ConnectionString"] = connectionString;
-}
-else
-{
-    throw new InvalidOperationException("La chaîne de connexion DefaultConnection est manquante.");
-}
+    options.AddPolicy("AuthPolicy", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
 
-// Ajouter la configuration ConfigPerso
-builder.Services.Configure<ConfigPerso>(builder.Configuration.GetSection("ConfigPerso"));
-
-// Ajouter JwtService � l'injection de d�pendances
-builder.Services.AddSingleton(sp => builder.Configuration.GetSection("ConfigPerso").Get<ConfigPerso>()!);
-builder.Services.AddSingleton<JwtService>();
-builder.Services.AddSingleton<FcmService>();
-
-// ========== Injection de Dépendances pour tous les DAL ==========
-// Ajouter les services DAL avec leurs interfaces (Scoped = une nouvelle instance par requête)
 builder.Services.AddScoped<IAuthDAL, AuthDAL>();
 builder.Services.AddScoped<IUserDAL, UserDAL>();
 builder.Services.AddScoped<IRestaurantDAL, RestaurantDAL>();
@@ -58,12 +95,9 @@ builder.Services.AddScoped<IReviewDAL, ReviewDAL>();
 builder.Services.AddScoped<IDailyActivityDAL, DailyActivityDAL>();
 builder.Services.AddScoped<IClosedDayExceptionDAL, ClosedDayExceptionDAL>();
 builder.Services.AddScoped<IDeviceTokenDAL, DeviceTokenDAL>();
-// ====================================================
 
-// Ajout de SignalR
 builder.Services.AddSignalR();
 
-// Ajoutez les services d'authentification avec JWT
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -71,119 +105,109 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    // Configuration pour valider le token JWT
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["ConfigPerso:Issuer"],
-        ValidAudience = builder.Configuration["ConfigPerso:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["ConfigPerso:SecretKey"] ?? string.Empty))
+        ValidIssuer = configPerso.Issuer,
+        ValidAudience = configPerso.Audience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configPerso.SecretKey)),
+        ClockSkew = TimeSpan.FromMinutes(1),
+        NameClaimType = "UserId"
     };
 });
 
 builder.Services.AddControllers();
 
-// Configuration du versionnage pour .NET 10
 builder.Services.AddApiVersioning(options =>
 {
     options.DefaultApiVersion = new ApiVersion(1, 0);
     options.AssumeDefaultVersionWhenUnspecified = true;
     options.ReportApiVersions = true;
-    
     options.ApiVersionReader = ApiVersionReader.Combine(
         new UrlSegmentApiVersionReader(),
-        new HeaderApiVersionReader("x-api-version")
-    );
+        new HeaderApiVersionReader("x-api-version"));
 })
-.AddMvc() // Indispensable pour les Controllers
+.AddMvc()
 .AddApiExplorer(options =>
 {
     options.GroupNameFormat = "'v'VVV";
     options.SubstituteApiVersionInUrl = true;
 });
 
-Console.WriteLine("Vérification de la base de données...");
-EnsureDatabase.For.PostgresqlDatabase(connectionString);
-
-var upgrader = DeployChanges.To
-    .PostgresqlDatabase(connectionString)
-    .WithScriptsEmbeddedInAssembly(System.Reflection.Assembly.GetExecutingAssembly())
-    .LogToConsole()
-    .Build();
-var result = upgrader.PerformUpgrade();
-
-if (!result.Successful)
-{
-    Console.ForegroundColor = ConsoleColor.Red;
-    Console.WriteLine($"Erreur DbUp : {result.Error}");
-    Console.ResetColor();
-    throw result.Error;
-}
-
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "TableMaster API", Version = "v1" });
-    c.SwaggerDoc("v2", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "TableMaster API", Version = "v2" });
+    const string bearerScheme = "bearer";
 
-    // 1. IL MANQUAIT ÇA : Définir comment le token doit être envoyé
-    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Description = "Authentification JWT. Tapez 'Bearer' suivi d'un espace et de votre token.",
-        Name = "Authorization",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
-        Scheme = "Bearer"
+        Title = "TableMaster API",
+        Version = "v1"
     });
 
-    // 2. Appliquer la sécurité (Le cadenas)
-    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    c.AddSecurityDefinition(bearerScheme, new OpenApiSecurityScheme
     {
-        {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-            {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
-                {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                    Id = "Bearer" // Doit correspondre exactement à l'ID ci-dessus
-                }
-            },
-            new List<string>()
-        }
+        Type = SecuritySchemeType.Http,
+        Scheme = bearerScheme,
+        BearerFormat = "JWT",
+        Description = "JWT Authorization header using the Bearer scheme."
     });
 
-    // Filtre pour séparer V1 et V2
-    c.DocInclusionPredicate((docName, apiDesc) =>
+    c.AddSecurityRequirement(document => new OpenApiSecurityRequirement
     {
-        // Si ton contrôleur n'a pas d'attribut [ApiVersion], on peut décider de l'afficher en v1 par défaut
-        var versions = apiDesc.CustomAttributes().OfType<Asp.Versioning.ApiVersionAttribute>().SelectMany(attr => attr.Versions);
-        if (!versions.Any()) return docName == "v1";
-
-        return versions.Any(v => $"v{v.MajorVersion}" == docName);
+        [new OpenApiSecuritySchemeReference(bearerScheme, document)] = []
     });
 });
 
-var app = builder.Build();
+builder.Services.AddHealthChecks()
+    .AddCheck<PostgresHealthCheck>("postgres");
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+if (builder.Configuration.GetValue("Features:RunMigrationsOnStartup", true))
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    Console.WriteLine("Verification de la base de donnees...");
+    EnsureDatabase.For.PostgresqlDatabase(connectionString);
+
+    var upgrader = DeployChanges.To
+        .PostgresqlDatabase(connectionString)
+        .WithScriptsEmbeddedInAssembly(System.Reflection.Assembly.GetExecutingAssembly())
+        .LogToConsole()
+        .Build();
+
+    var result = upgrader.PerformUpgrade();
+    if (!result.Successful)
+    {
+        throw result.Error;
+    }
 }
 
-app.UseCors("AllowAll");
+var app = builder.Build();
 
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+if (app.Environment.IsDevelopment() || builder.Configuration.GetValue("Features:EnableSwagger", false))
+{
+    app.UseSwagger();
+
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "TableMaster API v1");
+        c.RoutePrefix = "swagger";
+    });
+}
+
+app.UseCors("ConfiguredOrigins");
 app.UseHttpsRedirection();
-
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
-// Ajouter le Hub SignalR pour les r�servations
-app.MapHub<ReservationHub>("/reservationHub");
 
+app.MapHealthChecks("/health");
+app.MapHealthChecks("/ready");
+app.MapHub<ReservationHub>("/reservationHub");
 app.MapControllers();
 
 app.Run();

@@ -20,7 +20,7 @@ namespace TableMasterApi.Tests.Controllers
             var userDal = new Mock<IUserDAL>();
             var authDal = new Mock<IAuthDAL>();
 
-            var user = new UserOut
+            var user = new UserDb
             {
                 Id = 17,
                 Email = "chef@example.com",
@@ -76,7 +76,7 @@ namespace TableMasterApi.Tests.Controllers
             var userDal = new Mock<IUserDAL>();
             var authDal = new Mock<IAuthDAL>();
 
-            var user = new UserOut
+            var user = new UserDb
             {
                 Id = 18,
                 Email = "chef@example.com",
@@ -98,7 +98,7 @@ namespace TableMasterApi.Tests.Controllers
                 Password = "wrong-password"
             });
 
-            var error = result.Result.Should().BeOfType<ObjectResult>().Subject;
+            var error = result.Result.Should().BeOfType<NotFoundObjectResult>().Subject;
             error.StatusCode.Should().Be(404);
             error.Value.Should().Be("Mot de passe incorecte");
 
@@ -113,7 +113,7 @@ namespace TableMasterApi.Tests.Controllers
             var refreshToken = _jwtService.GenerateRefreshToken();
             var hashedInput = _jwtService.HashToken(refreshToken);
 
-            var user = new UserOut
+            var user = new UserDb
             {
                 Id = 27,
                 Email = "refresh@example.com",

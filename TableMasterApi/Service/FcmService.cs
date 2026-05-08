@@ -1,42 +1,51 @@
 using FirebaseAdmin;
 using FirebaseAdmin.Messaging;
 using Google.Apis.Auth.OAuth2;
-using System.IO;
-using System.Text.Json;
+using TableMasterApi.Model;
+
+namespace TableMasterApi.Service;
 
 public class FcmService
 {
-    public FcmService()
+    public FcmService(ConfigPerso config)
     {
         if (FirebaseApp.DefaultInstance == null)
         {
-            FirebaseApp.Create(new AppOptions()
+            using var credentialStream = File.OpenRead(config.FirebaseServiceAccountPath);
+            var credential = CredentialFactory
+                .FromStream<ServiceAccountCredential>(credentialStream)
+                .ToGoogleCredential();
+
+            FirebaseApp.Create(new AppOptions
             {
-                Credential = GoogleCredential.FromFile("tablemaster-firebase.json")
+                Credential = credential
             });
         }
     }
 
     public async Task<bool> SendNotificationAsync(IEnumerable<string> tokens, string title, string body, object? data = null)
     {
-        if (tokens == null || !tokens.Any()) return false;
-
-        // On prépare le message
-        var message = new MulticastMessage()
+        var tokenList = tokens?.ToList() ?? [];
+        if (tokenList.Count == 0)
         {
-            Tokens = tokens.ToList(),
-            Data = new Dictionary<string, string>
-            {
-                { "title", title },
-                { "body", body },
-                { "type", "reservation_created" }
-            }
+            return false;
+        }
+
+        var payload = data?.GetType()
+            .GetProperties()
+            .ToDictionary(property => property.Name, property => property.GetValue(data)?.ToString() ?? string.Empty)
+            ?? new Dictionary<string, string>();
+
+        payload["title"] = title;
+        payload["body"] = body;
+
+        var message = new MulticastMessage
+        {
+            Tokens = tokenList,
+            Data = payload
         };
 
-        // REMPLACER SendMulticastAsync PAR SendEachForMulticastAsync
         var response = await FirebaseMessaging.DefaultInstance.SendEachForMulticastAsync(message);
-    
-        // On vérifie s'il y a au moins un succès
         return response.SuccessCount > 0;
     }
 }

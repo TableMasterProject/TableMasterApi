@@ -2,11 +2,11 @@
 {
     public class ConfigPerso
     {
-        public string SecretKey { get; set; }
-        public string Issuer { get; set; }
-        public string Audience { get; set; }
-        public string ConnectionString { get; set; }
-        public string KeyApiGoogleMaps { get; set; }
-        public string FirebaseServerKey { get; set; }
+        public string SecretKey { get; set; } = string.Empty;
+        public string Issuer { get; set; } = string.Empty;
+        public string Audience { get; set; } = string.Empty;
+        public string ConnectionString { get; set; } = string.Empty;
+        public string KeyApiGoogleMaps { get; set; } = string.Empty;
+        public string FirebaseServiceAccountPath { get; set; } = "tablemaster-firebase.json";
     }
 }

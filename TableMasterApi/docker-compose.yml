@@ -6,7 +6,7 @@ services:
     container_name: TableMasterDataBase-${NAME_ENV}
     hostname: TableMaster
     ports:
-      - "${DB_PORT}:5432"
+      - "${DB_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: "${DB_NAME:-TableMaster}"
       POSTGRES_USER: "${DB_USER:-postgres}"
@@ -22,21 +22,34 @@ services:
     networks:
       - postgres-network
 
-  # api:
-  #   build: .
-  #   container_name: TableMasterApi-${NAME_ENV}
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   environment:
-  #     - ASPNETCORE_URLS=http://+:8080
-  #     - ASPNETCORE_ENVIRONMENT=Production
-  #     - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${DB_NAME:-TableMaster};Username=${DB_USER:-postgres};Password=${DB_PASSWORD};
-  #   ports:
-  #     - "${API_PORT}:8080"
-  #   restart: always
-  #   networks:
-  #     - postgres-network
+  api:
+    build: .
+    container_name: TableMasterApi-${NAME_ENV}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_URLS: "http://+:8080"
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=${DB_PORT:-5432};Database=${DB_NAME:-TableMaster};Username=${DB_USER:-postgres};Password=${DB_PASSWORD};"
+      ConfigPerso__SecretKey: "${JWT_SECRET}"
+      ConfigPerso__Issuer: "${JWT_ISSUER:-TableMasterApi}"
+      ConfigPerso__Audience: "${JWT_AUDIENCE:-TableMasterApi}"
+      ConfigPerso__KeyApiGoogleMaps: "${GOOGLE_MAPS_API_KEY}"
+      ConfigPerso__FirebaseServiceAccountPath: "${FIREBASE_SERVICE_ACCOUNT_PATH:-tablemaster-firebase.json}"
+      Cors__AllowedOrigins__0: "${CORS_ALLOWED_ORIGIN}"
+      Features__RunMigrationsOnStartup: "${RUN_MIGRATIONS_ON_STARTUP:-true}"
+      Features__EnableSwagger: "${ENABLE_SWAGGER:-false}"
+    ports:
+      - "${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: always
+    networks:
+      - postgres-network
 
 networks:
   postgres-network:

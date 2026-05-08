@@ -15,10 +15,10 @@ namespace TableMasterApi.DAL
         private readonly ConfigPerso _config;
         private readonly GoogleMapsService googleMapsService;
 
-        public RestaurantDAL(ConfigPerso config)
+        public RestaurantDAL(ConfigPerso config, GoogleMapsService googleMapsService)
         {
             _config = config;
-            googleMapsService = new GoogleMapsService(config);
+            this.googleMapsService = googleMapsService;
         }
 
         public async Task<IEnumerable<RestaurantOut>> GetRestaurants(SearchRestaurant search)

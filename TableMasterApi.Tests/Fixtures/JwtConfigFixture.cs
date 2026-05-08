@@ -39,7 +39,6 @@ namespace TableMasterApi.Tests.Fixtures
                 Email = email,
                 FirstName = firstName,
                 LastName = lastName,
-                Password = "Password123!",
                 CreatedAt = DateTime.UtcNow,
                 RestaurantId = null,
                 AccountType = 1

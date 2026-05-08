@@ -9,11 +9,11 @@ namespace TableMasterApi.DAL.Interfaces
     /// </summary>
     public interface IUserDAL
     {
-        Task<UserOut?> GetUserById(long id);
-        Task<UserOut?> GetUserByEmail(string email);
+        Task<UserDb?> GetUserById(long id);
+        Task<UserDb?> GetUserByEmail(string email);
         Task<UserOut> AddUser(UserIn user);
         Task<UserOut> PutUser(long idUser, UserIn user);
-        Task<bool> PutPassword(UserOut user, string newPassword);
+        Task<bool> PutPassword(long userId, string newPassword);
         Task<bool> DeletePassword(long id);
         Task<bool> SaveRefreshToken(long userId, string hashedToken, DateTime expiry);
         Task<long?> GetUserIdByRefreshToken(string hashedToken);
