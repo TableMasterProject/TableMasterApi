@@ -1,13 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.3.11520.95 d18.3
+VisualStudioVersion = 18.3.11520.95
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TableMasterApi", "TableMasterApi\TableMasterApi.csproj", "{B99895DF-4666-4590-B0BD-4645E96B2CD0}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Éléments de solution", "Éléments de solution", "{68F2CEC0-C485-44B2-949B-45F4CEDAECBA}"
-EndProject
-Project("{00D1A9C2-B5F0-4AF3-8072-F6C62B433612}") = "Database", "Database\Database.sqlproj", "{F525C8B0-EFA8-4F54-8A60-22F844016EE5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TableMasterApi.Tests", "TableMasterApi.Tests\TableMasterApi.Tests.csproj", "{71638D57-6711-4069-ADE2-7951A04E5FD0}"
 EndProject
@@ -21,12 +19,6 @@ Global
 		{B99895DF-4666-4590-B0BD-4645E96B2CD0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B99895DF-4666-4590-B0BD-4645E96B2CD0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B99895DF-4666-4590-B0BD-4645E96B2CD0}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F525C8B0-EFA8-4F54-8A60-22F844016EE5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F525C8B0-EFA8-4F54-8A60-22F844016EE5}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{F525C8B0-EFA8-4F54-8A60-22F844016EE5}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
-		{F525C8B0-EFA8-4F54-8A60-22F844016EE5}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{F525C8B0-EFA8-4F54-8A60-22F844016EE5}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F525C8B0-EFA8-4F54-8A60-22F844016EE5}.Release|Any CPU.Deploy.0 = Release|Any CPU
 		{71638D57-6711-4069-ADE2-7951A04E5FD0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{71638D57-6711-4069-ADE2-7951A04E5FD0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{71638D57-6711-4069-ADE2-7951A04E5FD0}.Release|Any CPU.ActiveCfg = Release|Any CPU
