@@ -23,7 +23,7 @@ services:
       - postgres-network
 
   api:
-    build: .
+    image: ghcr.io/TableMasterProject/tablemaster-api:prod
     container_name: TableMasterApi-${NAME_ENV}
     depends_on:
       postgres:
