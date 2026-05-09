@@ -1,13 +1,10 @@
-﻿using Dapper;
+using Dapper;
 using Npgsql;
-using TableMasterApi.Model;
 using TableMasterApi.DAL.Interfaces;
+using TableMasterApi.Model;
 
 namespace TableMasterApi.DAL
 {
-    /// <summary>
-    /// Data Access Layer pour la gestion des tables
-    /// </summary>
     public class TableDAL : ITableDAL
     {
         private readonly ConfigPerso _config;
@@ -16,80 +13,71 @@ namespace TableMasterApi.DAL
         {
             _config = config;
         }
-        public async Task<TableEntityOut?> GetTablesById(long TableId)
+
+        public async Task<TableEntityOut?> GetTablesById(long tableId)
         {
-            var query = @"
-                  SELECT ""Id"",
-                         ""RestaurantId"",
-                         ""TableNumber"",
-                         ""NumberOfSeats"",
-                         ""CreatedAt""
-                  FROM ""TableEntity""
+            var query = TableSelect + @"
                   WHERE ""Id"" = @Id
                   ORDER BY ""TableNumber"" ASC;";
+
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
-                var result = await connection.QuerySingleOrDefaultAsync<TableEntityOut>(query,
-                new
-                {
-                    Id = TableId,
-                });
-                return result;
+                return await connection.QuerySingleOrDefaultAsync<TableEntityOut>(query, new { Id = tableId });
             }
         }
+
         public async Task<IEnumerable<TableEntityOut>> GetTablesByRestaurantAsync(long restaurantId)
         {
-            var query = @"
-                  SELECT ""Id"",
-                         ""RestaurantId"",
-                         ""TableNumber"",
-                         ""NumberOfSeats"",
-                         ""CreatedAt""
-                  FROM ""TableEntity""
+            var query = TableSelect + @"
                   WHERE ""RestaurantId"" = @RestaurantId
-                  ORDER BY ""TableNumber"" ASC;";
+                  ORDER BY ""RoomId"" NULLS LAST, ""TableNumber"" ASC;";
+
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
-                var result = await connection.QueryAsync<TableEntityOut>(query, 
-                new {
-                    RestaurantId = restaurantId,
-                });
-                return result;
+                return await connection.QueryAsync<TableEntityOut>(query, new { RestaurantId = restaurantId });
             }
         }
+
         public async Task<TableEntityOut?> CreateTable(TableEntityIn table)
         {
             var query = @"
-                    INSERT INTO ""TableEntity"" (""RestaurantId"", ""TableNumber"", ""NumberOfSeats"")
-                    VALUES (@RestaurantId, @TableNumber, @NumberOfSeats)
-                    RETURNING ""Id"", ""RestaurantId"", ""TableNumber"", ""NumberOfSeats"", ""CreatedAt"";";
+                    INSERT INTO ""TableEntity""
+                        (""RestaurantId"", ""RoomId"", ""TableNumber"", ""NumberOfSeats"", ""Shape"",
+                         ""PositionX"", ""PositionY"", ""Width"", ""Height"", ""RotationDegrees"")
+                    VALUES
+                        (@RestaurantId, @RoomId, @TableNumber, @NumberOfSeats, @Shape,
+                         @PositionX, @PositionY, @Width, @Height, @RotationDegrees)
+                    RETURNING ""Id"", ""RestaurantId"", ""RoomId"", ""TableNumber"", ""NumberOfSeats"", ""Shape"",
+                              ""PositionX"", ""PositionY"", ""Width"", ""Height"", ""RotationDegrees"", ""CreatedAt"";";
+
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
-                var result = await connection.QuerySingleOrDefaultAsync<TableEntityOut>(query,table);
-                return result;
+                return await connection.QuerySingleOrDefaultAsync<TableEntityOut>(query, ToParameters(table));
             }
         }
+
         public async Task<TableEntityOut?> UpdateTable(long tableId, TableEntityIn table)
         {
             var query = @"
                 UPDATE ""TableEntity""
-                SET 
+                SET
+                    ""RoomId"" = @RoomId,
                     ""TableNumber"" = @TableNumber,
-                    ""NumberOfSeats"" = @NumberOfSeats
+                    ""NumberOfSeats"" = @NumberOfSeats,
+                    ""Shape"" = @Shape,
+                    ""PositionX"" = @PositionX,
+                    ""PositionY"" = @PositionY,
+                    ""Width"" = @Width,
+                    ""Height"" = @Height,
+                    ""RotationDegrees"" = @RotationDegrees
                 WHERE ""Id"" = @TableId
-                RETURNING ""Id"", ""RestaurantId"", ""TableNumber"", ""NumberOfSeats"", ""CreatedAt"";";
+                RETURNING ""Id"", ""RestaurantId"", ""RoomId"", ""TableNumber"", ""NumberOfSeats"", ""Shape"",
+                          ""PositionX"", ""PositionY"", ""Width"", ""Height"", ""RotationDegrees"", ""CreatedAt"";";
 
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
-                var parameters = new
-                {
-                    TableId = tableId,
-                    table.TableNumber,
-                    table.NumberOfSeats
-                };
-
-                var result = await connection.QuerySingleOrDefaultAsync<TableEntityOut>(query, parameters);
-                return result;
+                var parameters = ToParameters(table, tableId);
+                return await connection.QuerySingleOrDefaultAsync<TableEntityOut>(query, parameters);
             }
         }
 
@@ -104,15 +92,19 @@ namespace TableMasterApi.DAL
             }
         }
 
-
         public async Task<IEnumerable<TableEntityOut>> ReplaceTablesAsync(long restaurantId, IEnumerable<TableEntityIn> tables)
         {
             var deleteQuery = @"DELETE FROM ""TableEntity"" WHERE ""RestaurantId"" = @RestaurantId;";
 
             var insertQuery = @"
-        INSERT INTO ""TableEntity"" (""RestaurantId"", ""TableNumber"", ""NumberOfSeats"")
-        VALUES (@RestaurantId, @TableNumber, @NumberOfSeats)
-        RETURNING ""Id"", ""RestaurantId"", ""TableNumber"", ""NumberOfSeats"", ""CreatedAt"";";
+                INSERT INTO ""TableEntity""
+                    (""RestaurantId"", ""RoomId"", ""TableNumber"", ""NumberOfSeats"", ""Shape"",
+                     ""PositionX"", ""PositionY"", ""Width"", ""Height"", ""RotationDegrees"")
+                VALUES
+                    (@RestaurantId, @RoomId, @TableNumber, @NumberOfSeats, @Shape,
+                     @PositionX, @PositionY, @Width, @Height, @RotationDegrees)
+                RETURNING ""Id"", ""RestaurantId"", ""RoomId"", ""TableNumber"", ""NumberOfSeats"", ""Shape"",
+                          ""PositionX"", ""PositionY"", ""Width"", ""Height"", ""RotationDegrees"", ""CreatedAt"";";
 
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
@@ -121,25 +113,19 @@ namespace TableMasterApi.DAL
                 {
                     try
                     {
-                        // 1. Supprimer les anciennes tables
                         await connection.ExecuteAsync(deleteQuery, new { RestaurantId = restaurantId }, transaction);
 
-                        // 2. Insérer les nouvelles tables
                         var createdTables = new List<TableEntityOut>();
                         foreach (var table in tables)
                         {
-                            // On force l'ID du restaurant pour chaque table de la liste
-                            var result = await connection.QuerySingleAsync<TableEntityOut>(insertQuery, new
-                            {
-                                RestaurantId = restaurantId,
-                                table.TableNumber,
-                                table.NumberOfSeats
-                            }, transaction);
-
+                            table.RestaurantId = restaurantId;
+                            var result = await connection.QuerySingleAsync<TableEntityOut>(
+                                insertQuery,
+                                ToParameters(table),
+                                transaction);
                             createdTables.Add(result);
                         }
 
-                        // 3. Valider l'opération
                         transaction.Commit();
                         return createdTables;
                     }
@@ -152,6 +138,34 @@ namespace TableMasterApi.DAL
             }
         }
 
+        private static object ToParameters(TableEntityIn table, long? tableId = null) => new
+        {
+            TableId = tableId,
+            table.RestaurantId,
+            table.RoomId,
+            table.TableNumber,
+            table.NumberOfSeats,
+            Shape = (short)table.Shape,
+            table.PositionX,
+            table.PositionY,
+            table.Width,
+            table.Height,
+            table.RotationDegrees
+        };
 
+        private const string TableSelect = @"
+                  SELECT ""Id"",
+                         ""RestaurantId"",
+                         ""RoomId"",
+                         ""TableNumber"",
+                         ""NumberOfSeats"",
+                         ""Shape"",
+                         ""PositionX"",
+                         ""PositionY"",
+                         ""Width"",
+                         ""Height"",
+                         ""RotationDegrees"",
+                         ""CreatedAt""
+                  FROM ""TableEntity""";
     }
 }

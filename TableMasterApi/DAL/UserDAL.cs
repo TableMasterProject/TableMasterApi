@@ -125,15 +125,111 @@ namespace TableMasterApi.DAL
         {
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
-                connection.Open();
+                await connection.OpenAsync();
+                using (var transaction = await connection.BeginTransactionAsync())
+                {
+                    try
+                    {
+                        var userExists = await connection.QuerySingleAsync<bool>(
+                            @"SELECT EXISTS(SELECT 1 FROM ""User"" WHERE ""Id"" = @IdUser);",
+                            new { IdUser = id },
+                            transaction);
 
-                var query = @"DELETE FROM ""User"" WHERE ""Id"" = @IdUser";
+                        if (!userExists)
+                        {
+                            await transaction.RollbackAsync();
+                            return false;
+                        }
 
-                // Execute la requête de suppression
-                var rowsAffected = await connection.ExecuteAsync(query, new { IdUser = id });
+                        var restaurantIds = (await connection.QueryAsync<long>(
+                            @"SELECT ""Id"" FROM ""Restaurant"" WHERE ""UserId"" = @IdUser;",
+                            new { IdUser = id },
+                            transaction)).ToArray();
 
-                // Si une ligne a été affectée, la suppression a réussi
-                return rowsAffected > 0;
+                        var tableIds = restaurantIds.Length == 0
+                            ? []
+                            : (await connection.QueryAsync<long>(
+                                @"SELECT ""Id"" FROM ""TableEntity"" WHERE ""RestaurantId"" = ANY(@RestaurantIds);",
+                                new { RestaurantIds = restaurantIds },
+                                transaction)).ToArray();
+
+                        await connection.ExecuteAsync(
+                            @"UPDATE ""Reservation"" SET ""UserId"" = NULL WHERE ""UserId"" = @IdUser;",
+                            new { IdUser = id },
+                            transaction);
+
+                        if (restaurantIds.Length > 0)
+                        {
+                            await connection.ExecuteAsync(
+                                @"UPDATE ""Reservation"" SET ""RestaurantId"" = NULL WHERE ""RestaurantId"" = ANY(@RestaurantIds);",
+                                new { RestaurantIds = restaurantIds },
+                                transaction);
+
+                            if (tableIds.Length > 0)
+                            {
+                                await connection.ExecuteAsync(
+                                    @"UPDATE ""Reservation"" SET ""TableId"" = NULL WHERE ""TableId"" = ANY(@TableIds);",
+                                    new { TableIds = tableIds },
+                                    transaction);
+                            }
+
+                            await connection.ExecuteAsync(
+                                @"DELETE FROM ""Review"" WHERE ""RestaurantId"" = ANY(@RestaurantIds) OR ""UserId"" = @IdUser;",
+                                new { RestaurantIds = restaurantIds, IdUser = id },
+                                transaction);
+
+                            await connection.ExecuteAsync(
+                                @"DELETE FROM ""Menu"" WHERE ""RestaurantId"" = ANY(@RestaurantIds);",
+                                new { RestaurantIds = restaurantIds },
+                                transaction);
+
+                            await connection.ExecuteAsync(
+                                @"DELETE FROM ""DailyActivity"" WHERE ""RestaurantId"" = ANY(@RestaurantIds);",
+                                new { RestaurantIds = restaurantIds },
+                                transaction);
+
+                            await connection.ExecuteAsync(
+                                @"DELETE FROM ""ClosedDayException"" WHERE ""RestaurantId"" = ANY(@RestaurantIds);",
+                                new { RestaurantIds = restaurantIds },
+                                transaction);
+
+                            await connection.ExecuteAsync(
+                                @"DELETE FROM ""TableEntity"" WHERE ""RestaurantId"" = ANY(@RestaurantIds);",
+                                new { RestaurantIds = restaurantIds },
+                                transaction);
+
+                            await connection.ExecuteAsync(
+                                @"DELETE FROM ""RestaurantRoom"" WHERE ""RestaurantId"" = ANY(@RestaurantIds);",
+                                new { RestaurantIds = restaurantIds },
+                                transaction);
+
+                            await connection.ExecuteAsync(
+                                @"DELETE FROM ""Restaurant"" WHERE ""Id"" = ANY(@RestaurantIds);",
+                                new { RestaurantIds = restaurantIds },
+                                transaction);
+                        }
+                        else
+                        {
+                            await connection.ExecuteAsync(
+                                @"DELETE FROM ""Review"" WHERE ""UserId"" = @IdUser;",
+                                new { IdUser = id },
+                                transaction);
+                        }
+
+                        var rowsAffected = await connection.ExecuteAsync(
+                            @"DELETE FROM ""User"" WHERE ""Id"" = @IdUser;",
+                            new { IdUser = id },
+                            transaction);
+
+                        await transaction.CommitAsync();
+                        return rowsAffected > 0;
+                    }
+                    catch (Exception)
+                    {
+                        await transaction.RollbackAsync();
+                        throw;
+                    }
+                }
             }
         }
 

@@ -1,6 +1,7 @@
 ﻿using Dapper;
 using Npgsql;
 using System.Diagnostics.Eventing.Reader;
+using System.Text.Json;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
 using TableMasterApi.DAL.Interfaces;
@@ -123,8 +124,20 @@ namespace TableMasterApi.DAL
                     restaurant.PostalCode,restaurant.City,restaurant.Latitude,restaurant.Longitude, restaurant.Phone,
                     restaurant.CuisineType, restaurant.PaymentMethods, restaurant.Description, restaurant.IsAutoValidateReservation
                 });
+                var defaultRoom = await connection.QuerySingleAsync<RestaurantRoomOut>(
+                    @"
+                    INSERT INTO ""RestaurantRoom"" (""RestaurantId"", ""Name"", ""SortOrder"", ""BoundaryPointsJson"")
+                    VALUES (@RestaurantId, 'Salle principale', 0, CAST(@BoundaryPointsJson AS jsonb))
+                    RETURNING ""Id"", ""RestaurantId"", ""Name"", ""SortOrder"",
+                              ""BoundaryPointsJson""::text AS ""BoundaryPointsJson"", ""CreatedAt"";",
+                    new
+                    {
+                        RestaurantId = insertedRestaurant.Id,
+                        BoundaryPointsJson = JsonSerializer.Serialize(RestaurantRoomDefaults.DefaultBoundary())
+                    });
                 insertedRestaurant.DailyActivitys = [];
                 insertedRestaurant.ClosedDayExceptions = [];
+                insertedRestaurant.Rooms = [defaultRoom];
                 insertedRestaurant.Tables = [];
                 insertedRestaurant.Menu = [];
                 return insertedRestaurant;
@@ -185,6 +198,7 @@ namespace TableMasterApi.DAL
                 });
                 updatedRestaurant.DailyActivitys = [];
                 updatedRestaurant.ClosedDayExceptions = [];
+                updatedRestaurant.Rooms = [];
                 updatedRestaurant.Tables = [];
                 updatedRestaurant.Menu = [];
                 return updatedRestaurant;
@@ -216,6 +230,7 @@ namespace TableMasterApi.DAL
 
                 restaurant.DailyActivitys = await GetDailyActivity(restaurant.Id);
                 restaurant.ClosedDayExceptions = await GetClosedDayException(restaurant.Id);
+                restaurant.Rooms = await GetRooms(restaurant.Id);
                 restaurant.Tables = await GetTables(restaurant.Id);
                 restaurant.Menu = await GetMenus(restaurant.Id);
                 restaurant.Reviews = await GetReviews(restaurant.Id);
@@ -234,12 +249,48 @@ namespace TableMasterApi.DAL
                 return menus;
             }
         }
+
+        private async Task<IEnumerable<RestaurantRoomOut>> GetRooms(long idRestaurent)
+        {
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            {
+                connection.Open();
+                var query = @"
+                    SELECT ""Id"",
+                           ""RestaurantId"",
+                           ""Name"",
+                           ""SortOrder"",
+                           ""BoundaryPointsJson""::text AS ""BoundaryPointsJson"",
+                           ""CreatedAt""
+                    FROM ""RestaurantRoom""
+                    WHERE ""RestaurantId"" = @Id
+                    ORDER BY ""SortOrder"" ASC, ""Id"" ASC;";
+                var rooms = await connection.QueryAsync<RestaurantRoomOut>(query, new { Id = idRestaurent });
+                return rooms;
+            }
+        }
+
         private async Task<IEnumerable<TableEntityOut>> GetTables(long idRestaurent)
         {
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 connection.Open();
-                var query = @"SELECT * FROM ""TableEntity"" WHERE ""RestaurantId"" = @Id";
+                var query = @"
+                    SELECT ""Id"",
+                           ""RestaurantId"",
+                           ""RoomId"",
+                           ""TableNumber"",
+                           ""NumberOfSeats"",
+                           ""Shape"",
+                           ""PositionX"",
+                           ""PositionY"",
+                           ""Width"",
+                           ""Height"",
+                           ""RotationDegrees"",
+                           ""CreatedAt""
+                    FROM ""TableEntity""
+                    WHERE ""RestaurantId"" = @Id
+                    ORDER BY ""RoomId"" NULLS LAST, ""TableNumber"" ASC;";
                 var tables = await connection.QueryAsync<TableEntityOut>(query, new { Id = idRestaurent });
                 return tables;
             }

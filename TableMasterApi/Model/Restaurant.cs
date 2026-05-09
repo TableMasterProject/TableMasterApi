@@ -24,6 +24,7 @@
         public decimal DistanceWithUser { get; set; }
         public decimal AverageRating { get; set; }
         public long NumberOfReviews { get; set; }
+        public IEnumerable<RestaurantRoomOut>? Rooms { get; set; }
         public IEnumerable<TableEntityOut>? Tables { get; set; }
         public IEnumerable<DailyActivityOut>? DailyActivitys { get; set; }
         public IEnumerable<ClosedDayExceptionOut>? ClosedDayExceptions { get; set; }

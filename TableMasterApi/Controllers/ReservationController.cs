@@ -19,6 +19,7 @@ namespace TableMasterApi.Controllers
     {
         private readonly IReservationDAL _reservationDAL;
         private readonly IRestaurantDAL _restaurantDAL;
+        private readonly ITableDAL _tableDAL;
         private readonly IDeviceTokenDAL _deviceTokenDAL;
 
         private readonly JwtService _jwtService;
@@ -26,11 +27,12 @@ namespace TableMasterApi.Controllers
 
         private readonly IHubContext<ReservationHub> _hubContext;
 
-        public ReservationController(IReservationDAL reservationDAL, IRestaurantDAL restaurantDAL, IDeviceTokenDAL deviceTokenDAL, JwtService jwtService, IHubContext<ReservationHub> hubContext, FcmService fcmService)
+        public ReservationController(IReservationDAL reservationDAL, IRestaurantDAL restaurantDAL, ITableDAL tableDAL, IDeviceTokenDAL deviceTokenDAL, JwtService jwtService, IHubContext<ReservationHub> hubContext, FcmService fcmService)
         {
             _jwtService = jwtService;
             _reservationDAL = reservationDAL;
             _restaurantDAL = restaurantDAL;
+            _tableDAL = tableDAL;
             _deviceTokenDAL = deviceTokenDAL;
             _fcmService = fcmService;
             _hubContext = hubContext;
@@ -114,6 +116,19 @@ namespace TableMasterApi.Controllers
                 if (reservation == null)
                     return BadRequest("Données de réservation invalides.");
 
+                if (reservation.TableId == null || reservation.RestaurantId == null)
+                    return BadRequest("La table et le restaurant sont obligatoires.");
+
+                var table = await _tableDAL.GetTablesById(reservation.TableId.Value);
+                if (table == null)
+                    return NotFound("La table n'existe pas.");
+
+                if (table.RestaurantId != reservation.RestaurantId.Value)
+                    return BadRequest("La table ne fait pas partie de ce restaurant.");
+
+                if (table.NumberOfSeats < reservation.NumberOfPeople)
+                    return BadRequest("La table ne contient pas assez de places.");
+
                 var search = new SearchReservations
                 {
                     tableId = reservation.TableId,
@@ -142,7 +157,7 @@ namespace TableMasterApi.Controllers
                     }
                 }
 
-                var restaurant = await _restaurantDAL.GetRestaurantById(reservation.RestaurantId);
+                var restaurant = await _restaurantDAL.GetRestaurantById(reservation.RestaurantId.Value);
                 if (restaurant == null)
                     return NotFound("Aucune Restaurant trouvée.");
 
@@ -154,10 +169,10 @@ namespace TableMasterApi.Controllers
                 var created = await _reservationDAL.CreateReservationAsync(reservation);
 
                 // Envoi en temps réel via SignalR
-                await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + reservation.RestaurantId)
+                await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + reservation.RestaurantId.Value)
                                           .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
 
-                await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + created.UserId)
+                await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + created.UserId!.Value)
                               .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
 
                 // Envoi de push si l'application est fermée
@@ -166,7 +181,7 @@ namespace TableMasterApi.Controllers
                     $"Nouvelle réservation pour le {reservation.ReservationDate:dd/MM/yyyy HH:mm}.",
                     new { type = "reservation_created", reservationId = created.Id });
 
-                await SendPushNotificationToUsers(new[] { created.UserId },
+                await SendPushNotificationToUsers(new[] { created.UserId!.Value },
                     "Réservation enregistrée",
                     $"Votre réservation du {created.ReservationDate:dd/MM/yyyy HH:mm} a été créée.",
                     new { type = "reservation_created", reservationId = created.Id });
@@ -177,7 +192,7 @@ namespace TableMasterApi.Controllers
                     await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + restaurant.Id)
                                               .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(created));
 
-                    await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + created.UserId)
+                    await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + created.UserId!.Value)
                               .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(created));
 
                     await SendPushNotificationToUsers(new[] { restaurant.UserId },
@@ -185,7 +200,7 @@ namespace TableMasterApi.Controllers
                         $"Réservation validée pour le {created.ReservationDate:dd/MM/yyyy HH:mm}.",
                         new { type = "reservation_status_updated", reservationId = created.Id, status = created.Status.ToString() });
 
-                    await SendPushNotificationToUsers(new[] { created.UserId },
+                    await SendPushNotificationToUsers(new[] { created.UserId!.Value },
                         "Votre réservation est validée",
                         $"Votre réservation du {created.ReservationDate:dd/MM/yyyy HH:mm} a été validée.",
                         new { type = "reservation_status_updated", reservationId = created.Id, status = created.Status.ToString() });
@@ -217,7 +232,10 @@ namespace TableMasterApi.Controllers
                 if (Reservation == null)
                     return NotFound("Aucune réservation trouvée.");
 
-                var Restaurant = await _restaurantDAL.GetRestaurantById(Reservation.RestaurantId);
+                if (Reservation.RestaurantId == null)
+                    return NotFound("Le restaurant de cette réservation n'existe plus.");
+
+                var Restaurant = await _restaurantDAL.GetRestaurantById(Reservation.RestaurantId.Value);
                 if (Restaurant == null)
                     return NotFound("Aucune Restaurant trouvée.");
                 if (Restaurant.UserId != idUserToken && Reservation.UserId != idUserToken)
@@ -231,18 +249,24 @@ namespace TableMasterApi.Controllers
                 await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + Restaurant.Id)
                                           .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(resultes));
 
-                await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + Reservation.UserId)
-                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(resultes));
+                if (Reservation.UserId != null)
+                {
+                    await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + Reservation.UserId.Value)
+                                  .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(resultes));
+                }
 
                 await SendPushNotificationToUsers(new[] { Restaurant.UserId },
                     "Statut de réservation mis à jour",
                     $"La réservation #{id} est maintenant '{reservationStatus}'.",
                     new { type = "reservation_status_updated", reservationId = id, status = reservationStatus.ToString() });
 
-                await SendPushNotificationToUsers(new[] { Reservation.UserId },
-                    "Votre réservation a changé",
-                    $"Votre réservation du {Reservation.ReservationDate:dd/MM/yyyy HH:mm} est maintenant '{reservationStatus}'.",
-                    new { type = "reservation_status_updated", reservationId = id, status = reservationStatus.ToString() });
+                if (Reservation.UserId != null)
+                {
+                    await SendPushNotificationToUsers(new[] { Reservation.UserId.Value },
+                        "Votre réservation a changé",
+                        $"Votre réservation du {Reservation.ReservationDate:dd/MM/yyyy HH:mm} est maintenant '{reservationStatus}'.",
+                        new { type = "reservation_status_updated", reservationId = id, status = reservationStatus.ToString() });
+                }
 
                 return Ok(resultes);
             }
@@ -267,12 +291,21 @@ namespace TableMasterApi.Controllers
                     return NotFound("Restaurant not found.");
 
                 // Envoi en temps réel via SignalR
-                await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + deleted.RestaurantId)
-                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
-                await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + deleted.UserId)
-                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
+                if (deleted.RestaurantId != null)
+                {
+                    await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + deleted.RestaurantId.Value)
+                                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
+                }
 
-                var restaurant = await _restaurantDAL.GetRestaurantById(deleted.RestaurantId);
+                if (deleted.UserId != null)
+                {
+                    await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + deleted.UserId.Value)
+                                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
+                }
+
+                var restaurant = deleted.RestaurantId == null
+                    ? null
+                    : await _restaurantDAL.GetRestaurantById(deleted.RestaurantId.Value);
                 if (restaurant != null)
                 {
                     await SendPushNotificationToUsers(new[] { restaurant.UserId },
@@ -281,10 +314,13 @@ namespace TableMasterApi.Controllers
                         new { type = "reservation_cancelled", reservationId = id });
                 }
 
-                await SendPushNotificationToUsers(new[] { deleted.UserId },
-                    "Réservation annulée",
-                    $"Votre réservation du {deleted.ReservationDate:dd/MM/yyyy HH:mm} a été annulée.",
-                    new { type = "reservation_cancelled", reservationId = id });
+                if (deleted.UserId != null)
+                {
+                    await SendPushNotificationToUsers(new[] { deleted.UserId.Value },
+                        "Réservation annulée",
+                        $"Votre réservation du {deleted.ReservationDate:dd/MM/yyyy HH:mm} a été annulée.",
+                        new { type = "reservation_cancelled", reservationId = id });
+                }
 
                 return Ok(deleted != null);
             }

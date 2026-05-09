@@ -90,6 +90,7 @@ builder.Services.AddScoped<IUserDAL, UserDAL>();
 builder.Services.AddScoped<IRestaurantDAL, RestaurantDAL>();
 builder.Services.AddScoped<IMenuDAL, MenuDAL>();
 builder.Services.AddScoped<ITableDAL, TableDAL>();
+builder.Services.AddScoped<IRoomDAL, RoomDAL>();
 builder.Services.AddScoped<IReservationDAL, ReservationDAL>();
 builder.Services.AddScoped<IReviewDAL, ReviewDAL>();
 builder.Services.AddScoped<IDailyActivityDAL, DailyActivityDAL>();

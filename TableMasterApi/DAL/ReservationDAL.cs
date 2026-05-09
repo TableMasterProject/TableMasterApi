@@ -92,12 +92,13 @@ namespace TableMasterApi.DAL
         SELECT 
             R.""Id"", R.""UserId"", R.""TableId"", R.""RestaurantId"", R.""ReservationDate"", R.""NumberOfPeople"", R.""SpecialRequest"", R.""CreatedAt"", R.""Status"",
             U.""Id"", U.""FirstName"", U.""LastName"", U.""Email"", U.""AccountType"", U.""CreatedAt"",
-            T.""Id"", T.""RestaurantId"", T.""TableNumber"", T.""NumberOfSeats"", T.""CreatedAt"",
+            T.""Id"", T.""RestaurantId"", T.""RoomId"", T.""TableNumber"", T.""NumberOfSeats"", T.""Shape"",
+            T.""PositionX"", T.""PositionY"", T.""Width"", T.""Height"", T.""RotationDegrees"", T.""CreatedAt"",
             Res.""Id"", Res.""RestaurantName"", Res.""StreetNumber"", Res.""StreetName"", Res.""PostalCode"", Res.""City"", Res.""CuisineType""
         FROM ""Reservation"" R
-        JOIN ""User"" U ON R.""UserId"" = U.""Id""
-        JOIN ""TableEntity"" T ON R.""TableId"" = T.""Id""
-        JOIN ""Restaurant"" Res ON R.""RestaurantId"" = Res.""Id""
+        LEFT JOIN ""User"" U ON R.""UserId"" = U.""Id""
+        LEFT JOIN ""TableEntity"" T ON R.""TableId"" = T.""Id""
+        LEFT JOIN ""Restaurant"" Res ON R.""RestaurantId"" = Res.""Id""
         WHERE 
             {string.Join(" AND ", filters)}
         ORDER BY R.""ReservationDate"" ASC
@@ -153,13 +154,20 @@ namespace TableMasterApi.DAL
                 U.""AccountType"", 
                 U.""CreatedAt"",
                 T.""Id"" AS ""Id"",
-                T.""RestaurantId"", 
-                T.""TableNumber"", 
-                T.""NumberOfSeats"", 
+                T.""RestaurantId"",
+                T.""RoomId"",
+                T.""TableNumber"",
+                T.""NumberOfSeats"",
+                T.""Shape"",
+                T.""PositionX"",
+                T.""PositionY"",
+                T.""Width"",
+                T.""Height"",
+                T.""RotationDegrees"",
                 T.""CreatedAt""
             FROM ""Reservation"" R
-            JOIN ""User"" U ON R.""UserId"" = U.""Id""
-            JOIN ""TableEntity"" T ON R.""TableId"" = T.""Id""
+            LEFT JOIN ""User"" U ON R.""UserId"" = U.""Id""
+            LEFT JOIN ""TableEntity"" T ON R.""TableId"" = T.""Id""
             WHERE 
                 R.""Id"" = @Id;";
 
