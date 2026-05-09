@@ -132,11 +132,17 @@ jobs:
             docker image prune -f
 
             docker compose ps
+
             echo "Health check..."
-            for i in {1..30}; do
+
+            healthy=0
+
+            for i in $(seq 1 30); do
               if curl -fsS http://localhost:8080/health; then
+                echo ""
                 echo "API is healthy"
-                exit 0
+                healthy=1
+                break
               fi
 
               echo "API not ready yet... attempt $i/30"
@@ -144,7 +150,9 @@ jobs:
               sleep 5
             done
 
-            echo "API failed to become healthy"
-            docker compose logs api --tail=200
-            exit 1
+            if [ "$healthy" -ne 1 ]; then
+              echo "API failed to become healthy"
+              docker compose logs api --tail=200
+              exit 1
+            fi
           EOF
