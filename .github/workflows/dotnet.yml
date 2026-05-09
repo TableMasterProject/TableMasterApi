@@ -132,5 +132,19 @@ jobs:
             docker image prune -f
 
             docker compose ps
-            curl -f http://localhost:8080/health
+            echo "Health check..."
+            for i in {1..30}; do
+              if curl -fsS http://localhost:8080/health; then
+                echo "API is healthy"
+                exit 0
+              fi
+
+              echo "API not ready yet... attempt $i/30"
+              docker compose ps
+              sleep 5
+            done
+
+            echo "API failed to become healthy"
+            docker compose logs api --tail=200
+            exit 1
           EOF
