@@ -123,7 +123,7 @@ jobs:
             git reset --hard origin/Prod
 
             test -f .env
-            test -f secrets/tablemaster-firebase.json
+            test -f tablemaster-firebase.json
 
             echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
