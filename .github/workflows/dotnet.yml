@@ -108,7 +108,7 @@ jobs:
       - name: Prepare SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.ORACLE_SSH_KEY }}" > ~/.ssh/oracle_key
+          echo "${{ secrets.ORACLE_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/oracle_key
           chmod 600 ~/.ssh/oracle_key
           ssh-keyscan -H ${{ secrets.ORACLE_HOST }} >> ~/.ssh/known_hosts
 
@@ -119,29 +119,18 @@ jobs:
 
             cd /opt/tablemaster/prod/TableMasterApi
 
-            echo "Pull latest docker-compose.yml..."
             git fetch origin Prod
             git reset --hard origin/Prod
 
-            echo "Check required local secrets..."
             test -f .env
             test -f secrets/tablemaster-firebase.json
 
-            echo "Login to GHCR..."
             echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-            echo "Pull latest images..."
             docker compose pull
-
-            echo "Restart containers..."
             docker compose up -d
-
-            echo "Clean unused Docker images..."
             docker image prune -f
 
-            echo "Show containers..."
             docker compose ps
-
-            echo "Health check..."
             curl -f http://localhost:8080/health
           EOF
