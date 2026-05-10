@@ -15,6 +15,38 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task GetRooms_ShouldReturnOk_WhenRestaurantExists()
+        {
+            var roomDal = new Mock<IRoomDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RoomController(roomDal.Object, restaurantDal.Object, _jwtService);
+            var rooms = new[] { TestData.RoomOut() };
+
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut());
+            roomDal.Setup(x => x.GetRoomsByRestaurantAsync(10)).ReturnsAsync(rooms);
+
+            var result = await controller.GetRooms(10);
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            ok.Value.Should().BeEquivalentTo(rooms);
+        }
+
+        [Fact]
+        public async Task GetRooms_ShouldReturnNotFound_WhenRestaurantDoesNotExist()
+        {
+            var roomDal = new Mock<IRoomDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RoomController(roomDal.Object, restaurantDal.Object, _jwtService);
+
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync((RestaurantOut?)null);
+
+            var result = await controller.GetRooms(10);
+
+            result.Result.Should().BeOfType<NotFoundObjectResult>();
+            roomDal.Verify(x => x.GetRoomsByRestaurantAsync(It.IsAny<long>()), Times.Never);
+        }
+
+        [Fact]
         public async Task CreateRoom_ShouldReturnOk_WhenRestaurantBelongsToUser()
         {
             var roomDal = new Mock<IRoomDAL>();
@@ -83,6 +115,63 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task UpdateRoom_ShouldReturnOk_WhenUserOwnsRoom()
+        {
+            var roomDal = new Mock<IRoomDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RoomController(roomDal.Object, restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+            var input = TestData.RoomIn("Nouvelle salle");
+            var updated = TestData.RoomOut();
+
+            roomDal.Setup(x => x.GetRoomByIdAsync(5)).ReturnsAsync(TestData.RoomOut());
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(userId: 42));
+            roomDal.Setup(x => x.UpdateRoomAsync(5, input)).ReturnsAsync(updated);
+
+            var result = await controller.UpdateRoom(5, input);
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            ok.Value.Should().BeEquivalentTo(updated);
+            input.RestaurantId.Should().Be(10);
+        }
+
+        [Fact]
+        public async Task UpdateRoom_ShouldReturnBadRequest_WhenNameIsMissing()
+        {
+            var roomDal = new Mock<IRoomDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RoomController(roomDal.Object, restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+
+            roomDal.Setup(x => x.GetRoomByIdAsync(5)).ReturnsAsync(TestData.RoomOut());
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(userId: 42));
+
+            var result = await controller.UpdateRoom(5, TestData.RoomIn(""));
+
+            result.Result.Should().BeOfType<BadRequestObjectResult>();
+            roomDal.Verify(x => x.UpdateRoomAsync(It.IsAny<long>(), It.IsAny<RestaurantRoomIn>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task DeleteRoom_ShouldReturnOk_WhenRoomIsEmptyAndOwned()
+        {
+            var roomDal = new Mock<IRoomDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RoomController(roomDal.Object, restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+
+            roomDal.Setup(x => x.GetRoomByIdAsync(5)).ReturnsAsync(TestData.RoomOut());
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(userId: 42));
+            roomDal.Setup(x => x.RoomHasTablesAsync(5)).ReturnsAsync(false);
+            roomDal.Setup(x => x.DeleteRoomAsync(5)).ReturnsAsync(true);
+
+            var result = await controller.DeleteRoom(5);
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            ok.Value.Should().Be(true);
+        }
+
+        [Fact]
         public async Task SaveLayout_ShouldDelegateAtomicLayoutPayload_WhenUserOwnsRoom()
         {
             var roomDal = new Mock<IRoomDAL>();
@@ -124,6 +213,38 @@ namespace TableMasterApi.Tests.Controllers
             result.Result.Should().BeOfType<OkObjectResult>();
             layout.Room.RestaurantId.Should().Be(10);
             roomDal.Verify(x => x.SaveLayoutAsync(5, layout), Times.Once);
+        }
+
+        [Fact]
+        public async Task SaveLayout_ShouldReturnUnauthorized_WhenRestaurantBelongsToAnotherUser()
+        {
+            var roomDal = new Mock<IRoomDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RoomController(roomDal.Object, restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+
+            roomDal.Setup(x => x.GetRoomByIdAsync(5)).ReturnsAsync(TestData.RoomOut());
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(userId: 99));
+
+            var result = await controller.SaveLayout(5, new RestaurantRoomLayoutIn { Room = TestData.RoomIn() });
+
+            result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+            roomDal.Verify(x => x.SaveLayoutAsync(It.IsAny<long>(), It.IsAny<RestaurantRoomLayoutIn>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task SaveLayout_ShouldReturnNotFound_WhenRoomDoesNotExist()
+        {
+            var roomDal = new Mock<IRoomDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RoomController(roomDal.Object, restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+
+            roomDal.Setup(x => x.GetRoomByIdAsync(5)).ReturnsAsync((RestaurantRoomOut?)null);
+
+            var result = await controller.SaveLayout(5, new RestaurantRoomLayoutIn { Room = TestData.RoomIn() });
+
+            result.Result.Should().BeOfType<NotFoundObjectResult>();
         }
     }
 }

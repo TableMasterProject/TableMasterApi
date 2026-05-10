@@ -16,6 +16,69 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task GetAll_ShouldReturnOkWithRestaurants()
+        {
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 55);
+            var search = new SearchRestaurant();
+            var restaurants = new[] { TestData.RestaurantOut(userId: 55) };
+
+            restaurantDal.Setup(x => x.GetRestaurants(search)).ReturnsAsync(restaurants);
+
+            var result = await controller.GetAll(search);
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            ok.Value.Should().BeEquivalentTo(restaurants);
+        }
+
+        [Fact]
+        public async Task GetAll_ShouldReturnStatus500_WhenDalThrows()
+        {
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 55);
+
+            restaurantDal.Setup(x => x.GetRestaurants(It.IsAny<SearchRestaurant>()))
+                .ThrowsAsync(new InvalidOperationException("db down"));
+
+            var result = await controller.GetAll(new SearchRestaurant());
+
+            var error = result.Result.Should().BeOfType<ObjectResult>().Subject;
+            error.StatusCode.Should().Be(500);
+        }
+
+        [Fact]
+        public async Task Get_ShouldReturnOk_WhenRestaurantExists()
+        {
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 55);
+            var restaurant = TestData.RestaurantOut(userId: 55);
+
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(restaurant);
+
+            var result = await controller.Get(10);
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            ok.Value.Should().BeEquivalentTo(restaurant);
+        }
+
+        [Fact]
+        public async Task Get_ShouldReturnNotFound_WhenRestaurantDoesNotExist()
+        {
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 55);
+
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync((RestaurantOut?)null);
+
+            var result = await controller.Get(10);
+
+            result.Result.Should().BeOfType<NotFoundObjectResult>();
+        }
+
+        [Fact]
         public async Task Post_ShouldReturnCreatedRestaurant_WhenInputIsValid()
         {
             var restaurantDal = new Mock<IRestaurantDAL>();
@@ -62,6 +125,19 @@ namespace TableMasterApi.Tests.Controllers
             ok.Value.Should().BeEquivalentTo(created);
 
             restaurantDal.Verify(x => x.PostRestaurantAsync(userId, input), Times.Once);
+        }
+
+        [Fact]
+        public async Task Post_ShouldReturnBadRequest_WhenInputIsNull()
+        {
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 55);
+
+            var result = await controller.Post(null!);
+
+            result.Result.Should().BeOfType<BadRequestObjectResult>();
+            restaurantDal.Verify(x => x.PostRestaurantAsync(It.IsAny<long>(), It.IsAny<RestaurantIn>()), Times.Never);
         }
 
         [Fact]
@@ -114,6 +190,21 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task Put_ShouldReturnNotFound_WhenDalReturnsNull()
+        {
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 61);
+            var input = TestData.RestaurantIn();
+
+            restaurantDal.Setup(x => x.PutRestaurantAsync(61, 91, input)).ReturnsAsync((RestaurantOut?)null);
+
+            var result = await controller.Put(91, input);
+
+            result.Result.Should().BeOfType<NotFoundObjectResult>();
+        }
+
+        [Fact]
         public async Task Delete_ShouldReturnOk_WhenRestaurantDeletionSucceeds()
         {
             var restaurantDal = new Mock<IRestaurantDAL>();
@@ -129,6 +220,20 @@ namespace TableMasterApi.Tests.Controllers
             ok.Value.Should().Be(true);
 
             restaurantDal.Verify(x => x.DeleteRestaurant(userId, 33), Times.Once);
+        }
+
+        [Fact]
+        public async Task Delete_ShouldReturnNotFound_WhenDeletionFails()
+        {
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 70);
+
+            restaurantDal.Setup(x => x.DeleteRestaurant(70, 33)).ReturnsAsync(false);
+
+            var result = await controller.Delete(33);
+
+            result.Result.Should().BeOfType<NotFoundObjectResult>();
         }
     }
 }

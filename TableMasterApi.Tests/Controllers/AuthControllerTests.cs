@@ -106,6 +106,36 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task Login_ShouldReturnNotFound_WhenUserDoesNotExist()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var login = new LoginUserIn { Email = "missing@example.com", Password = "Password123!" };
+
+            userDal.Setup(x => x.GetUserByEmail(login.Email)).ReturnsAsync((UserDb?)null);
+
+            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+
+            var result = await controller.Login(login);
+
+            result.Result.Should().BeOfType<NotFoundObjectResult>();
+            authDal.Verify(x => x.VerifyPassword(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Login_ShouldReturnBadRequest_WhenCredentialsAreBlank()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+
+            var result = await controller.Login(new LoginUserIn { Email = "", Password = " " });
+
+            result.Result.Should().BeOfType<BadRequestResult>();
+            userDal.Verify(x => x.GetUserByEmail(It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
         public async Task Refresh_ShouldRotateTokens_WhenRefreshTokenIsValid()
         {
             var userDal = new Mock<IUserDAL>();
@@ -173,6 +203,39 @@ namespace TableMasterApi.Tests.Controllers
             var unauthorized = result.Result.Should().BeOfType<UnauthorizedObjectResult>().Subject;
             unauthorized.Value.Should().Be("Session expirée");
 
+            userDal.Verify(x => x.DeleteRefreshToken(It.IsAny<string>()), Times.Never);
+            userDal.Verify(x => x.SaveRefreshToken(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Refresh_ShouldReturnBadRequest_WhenRefreshTokenIsBlank()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+
+            var result = await controller.Refresh(new LoginTokenIn { RefreshToken = "" });
+
+            result.Result.Should().BeOfType<BadRequestResult>();
+            userDal.Verify(x => x.GetUserIdByRefreshToken(It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Refresh_ShouldReturnUnauthorized_WhenUserNoLongerExists()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var refreshToken = _jwtService.GenerateRefreshToken();
+            var hashedInput = _jwtService.HashToken(refreshToken);
+
+            userDal.Setup(x => x.GetUserIdByRefreshToken(hashedInput)).ReturnsAsync(27L);
+            userDal.Setup(x => x.GetUserById(27)).ReturnsAsync((UserDb?)null);
+
+            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+
+            var result = await controller.Refresh(new LoginTokenIn { RefreshToken = refreshToken });
+
+            result.Result.Should().BeOfType<UnauthorizedObjectResult>();
             userDal.Verify(x => x.DeleteRefreshToken(It.IsAny<string>()), Times.Never);
             userDal.Verify(x => x.SaveRefreshToken(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
         }

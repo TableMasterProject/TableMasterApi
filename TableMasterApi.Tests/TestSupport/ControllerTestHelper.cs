@@ -14,5 +14,10 @@ namespace TableMasterApi.Tests.TestSupport
 
             controller.ControllerContext.HttpContext.Request.Headers["Authorization"] = $"Bearer {token}";
         }
+
+        public static void SetBearerToken(ControllerBase controller, JwtService jwtService, long userId)
+        {
+            SetBearerToken(controller, jwtService.GenerateAccessToken(userId));
+        }
     }
 }

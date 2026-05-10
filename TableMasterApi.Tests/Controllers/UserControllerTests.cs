@@ -16,6 +16,53 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task GetUserById_ShouldReturnOkWithoutPassword_WhenUserExists()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var user = TestData.UserDb(42);
+            userDal.Setup(x => x.GetUserById(42)).ReturnsAsync(user);
+            var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
+
+            var result = await controller.GetUserById(42);
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            ok.Value.Should().BeEquivalentTo(user.ToPublicUser());
+        }
+
+        [Fact]
+        public async Task GetUserById_ShouldReturnNotFound_WhenUserDoesNotExist()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            userDal.Setup(x => x.GetUserById(42)).ReturnsAsync((UserDb?)null);
+            var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
+
+            var result = await controller.GetUserById(42);
+
+            result.Result.Should().BeOfType<NotFoundResult>();
+        }
+
+        [Fact]
+        public async Task PutUser_ShouldUseCurrentUserId()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+            var input = TestData.UserIn();
+            var updated = TestData.UserOut(42);
+
+            userDal.Setup(x => x.PutUser(42, input)).ReturnsAsync(updated);
+
+            var result = await controller.PutUser(input);
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            ok.Value.Should().BeEquivalentTo(updated);
+            userDal.Verify(x => x.PutUser(42, input), Times.Once);
+        }
+
+        [Fact]
         public async Task AddUser_ShouldReturnOk_AndStoreRefreshTokenHash()
         {
             var userDal = new Mock<IUserDAL>();
@@ -106,6 +153,70 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task PutPassword_ShouldReturnNotFound_WhenCurrentUserDoesNotExist()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 99);
+
+            userDal.Setup(x => x.GetUserById(99)).ReturnsAsync((UserDb?)null);
+
+            var result = await controller.PutPassword(new PasswordEntity
+            {
+                OldPassword = "OldPassword!1",
+                NewPassword = "NewPassword!2"
+            });
+
+            result.Result.Should().BeOfType<NotFoundResult>();
+            authDal.Verify(x => x.VerifyPassword(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task PutPassword_ShouldReturnNotFound_WhenOldPasswordIsInvalid()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 99);
+            var storedUser = TestData.UserDb(99);
+
+            userDal.Setup(x => x.GetUserById(99)).ReturnsAsync(storedUser);
+            authDal.Setup(x => x.VerifyPassword(storedUser.Password, "wrong")).Returns(false);
+
+            var result = await controller.PutPassword(new PasswordEntity
+            {
+                OldPassword = "wrong",
+                NewPassword = "NewPassword!2"
+            });
+
+            result.Result.Should().BeOfType<NotFoundObjectResult>();
+            userDal.Verify(x => x.PutPassword(It.IsAny<long>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task PutPassword_ShouldReturnNotFound_WhenDalDoesNotChangePassword()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 99);
+            var storedUser = TestData.UserDb(99);
+
+            userDal.Setup(x => x.GetUserById(99)).ReturnsAsync(storedUser);
+            authDal.Setup(x => x.VerifyPassword(storedUser.Password, "OldPassword!1")).Returns(true);
+            userDal.Setup(x => x.PutPassword(99, "NewPassword!2")).ReturnsAsync(false);
+
+            var result = await controller.PutPassword(new PasswordEntity
+            {
+                OldPassword = "OldPassword!1",
+                NewPassword = "NewPassword!2"
+            });
+
+            result.Result.Should().BeOfType<NotFoundObjectResult>();
+        }
+
+        [Fact]
         public async Task DeleteUser_ShouldReturnOk_WhenPasswordDeletionSucceeds()
         {
             var userDal = new Mock<IUserDAL>();
@@ -124,6 +235,21 @@ namespace TableMasterApi.Tests.Controllers
             ok.Value.Should().Be(true);
 
             userDal.Verify(x => x.DeletePassword(userId), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteUser_ShouldReturnNotFound_WhenDeletionFails()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 123);
+
+            userDal.Setup(x => x.DeletePassword(123)).ReturnsAsync(false);
+
+            var result = await controller.DeleteUser();
+
+            result.Result.Should().BeOfType<NotFoundObjectResult>();
         }
     }
 }
