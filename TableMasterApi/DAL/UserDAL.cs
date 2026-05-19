@@ -256,13 +256,10 @@ namespace TableMasterApi.DAL
             {
                 connection.Open();
 
-                string query = @"SELECT ""UserId"" FROM ""UserRefreshTokens"" 
+                string query = @"SELECT ""UserId"" FROM ""UserRefreshTokens""
                      WHERE ""TokenHash"" = @TokenHash AND ""ExpiryDate"" > CURRENT_TIMESTAMP";
 
-                // Execute la requête
-                IEnumerable<long> IEnumerableuser = await connection.QueryAsync<long>(query, new { TokenHash = hashedToken });
-                long? userId = IEnumerableuser.FirstOrDefault();
-                return userId;
+                return await connection.QuerySingleOrDefaultAsync<long?>(query, new { TokenHash = hashedToken });
             }
         }
         
