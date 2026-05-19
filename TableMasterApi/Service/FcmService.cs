@@ -31,6 +31,20 @@ public class FcmService
             return false;
         }
 
+        var payload = BuildPayload(title, body, data);
+
+        var message = new MulticastMessage
+        {
+            Tokens = tokenList,
+            Data = new Dictionary<string, string>(payload)
+        };
+
+        var response = await FirebaseMessaging.DefaultInstance.SendEachForMulticastAsync(message);
+        return response.SuccessCount > 0;
+    }
+
+    public static IReadOnlyDictionary<string, string> BuildPayload(string title, string body, object? data)
+    {
         var payload = data?.GetType()
             .GetProperties()
             .ToDictionary(property => property.Name, property => property.GetValue(data)?.ToString() ?? string.Empty)
@@ -38,14 +52,6 @@ public class FcmService
 
         payload["title"] = title;
         payload["body"] = body;
-
-        var message = new MulticastMessage
-        {
-            Tokens = tokenList,
-            Data = payload
-        };
-
-        var response = await FirebaseMessaging.DefaultInstance.SendEachForMulticastAsync(message);
-        return response.SuccessCount > 0;
+        return payload;
     }
 }
