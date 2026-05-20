@@ -141,6 +141,24 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task Post_ShouldReturnGoogleMapsStatus_WhenGeocodingFails()
+        {
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 55);
+            var input = TestData.RestaurantIn();
+
+            restaurantDal.Setup(x => x.PostRestaurantAsync(55, input))
+                .ThrowsAsync(new GoogleMapsException(400, "Adresse introuvable."));
+
+            var result = await controller.Post(input);
+
+            var error = result.Result.Should().BeOfType<ObjectResult>().Subject;
+            error.StatusCode.Should().Be(400);
+            error.Value.Should().Be("Adresse introuvable.");
+        }
+
+        [Fact]
         public async Task Put_ShouldReturnOk_WhenRestaurantUpdateSucceeds()
         {
             var restaurantDal = new Mock<IRestaurantDAL>();
@@ -202,6 +220,24 @@ namespace TableMasterApi.Tests.Controllers
             var result = await controller.Put(91, input);
 
             result.Result.Should().BeOfType<NotFoundObjectResult>();
+        }
+
+        [Fact]
+        public async Task Put_ShouldReturnGoogleMapsStatus_WhenGeocodingFails()
+        {
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 61);
+            var input = TestData.RestaurantIn();
+
+            restaurantDal.Setup(x => x.PutRestaurantAsync(61, 91, input))
+                .ThrowsAsync(new GoogleMapsException(503, "Google Maps a refuse la requete."));
+
+            var result = await controller.Put(91, input);
+
+            var error = result.Result.Should().BeOfType<ObjectResult>().Subject;
+            error.StatusCode.Should().Be(503);
+            error.Value.Should().Be("Google Maps a refuse la requete.");
         }
 
         [Fact]

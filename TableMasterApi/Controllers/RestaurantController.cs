@@ -80,6 +80,10 @@ namespace TableMasterApi.Controllers
                 var createdRestaurant = await _restaurantDAL.PostRestaurantAsync(idUserToken, restaurant);
                 return Ok(createdRestaurant);
             }
+            catch (GoogleMapsException e)
+            {
+                return StatusCode(e.StatusCode, e.Message);
+            }
             catch (Exception e)
             {
                 return StatusCode(500, e.Message);
@@ -110,6 +114,10 @@ namespace TableMasterApi.Controllers
                     return NotFound("Restaurant non trouvé ou modification impossible.");
 
                 return Ok(put);
+            }
+            catch (GoogleMapsException e)
+            {
+                return StatusCode(e.StatusCode, e.Message);
             }
             catch (Exception e)
             {
