@@ -1,7 +1,9 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Mvc;
 using TableMasterApi.Controllers;
 using TableMasterApi.DAL.Interfaces;
 using TableMasterApi.Model;
+using TableMasterApi.Service;
 
 namespace TableMasterApi.Tests.Controllers
 {
@@ -50,7 +52,7 @@ namespace TableMasterApi.Tests.Controllers
                 })
                 .ReturnsAsync(true);
 
-            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+            var controller = CreateController(userDal, authDal);
 
             var result = await controller.Login(login);
 
@@ -90,7 +92,7 @@ namespace TableMasterApi.Tests.Controllers
             userDal.Setup(x => x.GetUserByEmail(user.Email)).ReturnsAsync(user);
             authDal.Setup(x => x.VerifyPassword(user.Password, "wrong-password")).Returns(false);
 
-            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+            var controller = CreateController(userDal, authDal);
 
             var result = await controller.Login(new LoginUserIn
             {
@@ -114,7 +116,7 @@ namespace TableMasterApi.Tests.Controllers
 
             userDal.Setup(x => x.GetUserByEmail(login.Email)).ReturnsAsync((UserDb?)null);
 
-            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+            var controller = CreateController(userDal, authDal);
 
             var result = await controller.Login(login);
 
@@ -127,12 +129,134 @@ namespace TableMasterApi.Tests.Controllers
         {
             var userDal = new Mock<IUserDAL>();
             var authDal = new Mock<IAuthDAL>();
-            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+            var controller = CreateController(userDal, authDal);
 
             var result = await controller.Login(new LoginUserIn { Email = "", Password = " " });
 
             result.Result.Should().BeOfType<BadRequestResult>();
             userDal.Verify(x => x.GetUserByEmail(It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task Login_ShouldReturnUnauthorized_WhenAccountUsesGoogleAuth()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var user = new UserDb
+            {
+                Id = 19,
+                Email = "google@example.com",
+                FirstName = "Google",
+                LastName = "User",
+                AccountType = 0,
+                AuthProvider = "Google",
+                GoogleSubject = "google-subject",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            userDal.Setup(x => x.GetUserByEmail(user.Email)).ReturnsAsync(user);
+
+            var controller = CreateController(userDal, authDal);
+
+            var result = await controller.Login(new LoginUserIn
+            {
+                Email = user.Email,
+                Password = "Password123!"
+            });
+
+            var unauthorized = result.Result.Should().BeOfType<UnauthorizedObjectResult>().Subject;
+            unauthorized.Value.Should().Be("Ce compte utilise la connexion Google.");
+            authDal.Verify(x => x.VerifyPassword(It.IsAny<string?>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task RegisterGoogle_ShouldReturnConflict_WhenEmailAlreadyExists()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var token = _jwtService.GenerateGoogleRegistrationToken(
+                "google-subject",
+                "used@example.com",
+                "Used",
+                "Email");
+
+            userDal.Setup(x => x.GetUserByGoogleSubject("google-subject")).ReturnsAsync((UserDb?)null);
+            userDal.Setup(x => x.GetUserByEmail("used@example.com")).ReturnsAsync(new UserDb
+            {
+                Id = 20,
+                Email = "used@example.com",
+                Password = "hashed-password",
+                FirstName = "Used",
+                LastName = "Email",
+                AccountType = 0,
+                AuthProvider = "Password",
+                CreatedAt = DateTime.UtcNow
+            });
+
+            var controller = CreateController(userDal, authDal);
+
+            var result = await controller.RegisterGoogle(new GoogleRegisterIn
+            {
+                GoogleRegistrationToken = token,
+                Email = "used@example.com",
+                FirstName = "Used",
+                LastName = "Email",
+                AccountType = 0
+            });
+
+            var conflict = result.Result.Should().BeOfType<ConflictObjectResult>().Subject;
+            conflict.Value.Should().Be("Un compte existe déjà avec cet email.");
+            userDal.Verify(x => x.AddGoogleUser(It.IsAny<GoogleRegisterIn>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task RegisterGoogle_ShouldCreateUserAndReturnTokens_WhenGoogleAccountIsNew()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var token = _jwtService.GenerateGoogleRegistrationToken(
+                "google-subject-new",
+                "new-google@example.com",
+                "New",
+                "Google");
+            var model = new GoogleRegisterIn
+            {
+                GoogleRegistrationToken = token,
+                Email = "new-google@example.com",
+                FirstName = "New",
+                LastName = "Google",
+                AccountType = 0
+            };
+
+            userDal.Setup(x => x.GetUserByGoogleSubject("google-subject-new")).ReturnsAsync((UserDb?)null);
+            userDal.Setup(x => x.GetUserByEmail(model.Email)).ReturnsAsync((UserDb?)null);
+            userDal.Setup(x => x.AddGoogleUser(model, "google-subject-new")).ReturnsAsync(new UserOut
+            {
+                Id = 21,
+                Email = model.Email,
+                FirstName = model.FirstName,
+                LastName = model.LastName,
+                AccountType = model.AccountType,
+                AuthProvider = "Google",
+                CreatedAt = DateTime.UtcNow
+            });
+            userDal.Setup(x => x.SaveRefreshToken(21, It.IsAny<string>(), It.IsAny<DateTime>()))
+                .ReturnsAsync(true);
+
+            var controller = CreateController(userDal, authDal);
+
+            var result = await controller.RegisterGoogle(model);
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            var payload = ok.Value.Should().BeOfType<LoginUserOut>().Subject;
+            payload.User.Id.Should().Be(21);
+            payload.User.AuthProvider.Should().Be("Google");
+            payload.AccessToken.Should().NotBeNullOrWhiteSpace();
+            payload.RefreshToken.Should().NotBeNullOrWhiteSpace();
+            _jwtService.ExtractUserIdFromToken(payload.AccessToken).Should().Be(21);
+
+            userDal.Verify(x => x.AddGoogleUser(model, "google-subject-new"), Times.Once);
+            userDal.Verify(x => x.SaveRefreshToken(21, It.IsAny<string>(), It.IsAny<DateTime>()), Times.Once);
         }
 
         [Fact]
@@ -166,7 +290,7 @@ namespace TableMasterApi.Tests.Controllers
                 .Callback<long, string, DateTime>((_, hash, __) => savedHash = hash)
                 .ReturnsAsync(true);
 
-            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+            var controller = CreateController(userDal, authDal);
 
             var result = await controller.Refresh(new LoginTokenIn { RefreshToken = refreshToken });
 
@@ -196,7 +320,7 @@ namespace TableMasterApi.Tests.Controllers
 
             userDal.Setup(x => x.GetUserIdByRefreshToken(hashedInput)).ReturnsAsync((long?)null);
 
-            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+            var controller = CreateController(userDal, authDal);
 
             var result = await controller.Refresh(new LoginTokenIn { RefreshToken = refreshToken });
 
@@ -212,7 +336,7 @@ namespace TableMasterApi.Tests.Controllers
         {
             var userDal = new Mock<IUserDAL>();
             var authDal = new Mock<IAuthDAL>();
-            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+            var controller = CreateController(userDal, authDal);
 
             var result = await controller.Refresh(new LoginTokenIn { RefreshToken = "" });
 
@@ -231,13 +355,29 @@ namespace TableMasterApi.Tests.Controllers
             userDal.Setup(x => x.GetUserIdByRefreshToken(hashedInput)).ReturnsAsync(27L);
             userDal.Setup(x => x.GetUserById(27)).ReturnsAsync((UserDb?)null);
 
-            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+            var controller = CreateController(userDal, authDal);
 
             var result = await controller.Refresh(new LoginTokenIn { RefreshToken = refreshToken });
 
             result.Result.Should().BeOfType<UnauthorizedObjectResult>();
             userDal.Verify(x => x.DeleteRefreshToken(It.IsAny<string>()), Times.Never);
             userDal.Verify(x => x.SaveRefreshToken(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
+        }
+
+        private AuthController CreateController(Mock<IUserDAL> userDal, Mock<IAuthDAL> authDal)
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["GoogleAuth:ClientId"] = "test-google-client-id"
+                })
+                .Build();
+
+            return new AuthController(
+                userDal.Object,
+                authDal.Object,
+                _jwtService,
+                new GoogleAuthService(configuration));
         }
     }
 }

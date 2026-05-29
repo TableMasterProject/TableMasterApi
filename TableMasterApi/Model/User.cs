@@ -7,6 +7,8 @@
         public required string FirstName { get; set; }
         public required string LastName { get; set; }
         public byte AccountType { get; set; }
+        public string AuthProvider { get; set; } = "Password";
+        public string? GoogleSubject { get; set; }
     }
 
     public class UserOut
@@ -18,11 +20,13 @@
         public byte AccountType { get; set; }
         public DateTime CreatedAt { get; set; }
         public long? RestaurantId { get; set; }
+        public string AuthProvider { get; set; } = "Password";
     }
 
     public class UserDb : UserOut
     {
-        public required string Password { get; set; }
+        public string? Password { get; set; }
+        public string? GoogleSubject { get; set; }
 
         public UserOut ToPublicUser()
         {
@@ -34,7 +38,8 @@
                 LastName = LastName,
                 AccountType = AccountType,
                 CreatedAt = CreatedAt,
-                RestaurantId = RestaurantId
+                RestaurantId = RestaurantId,
+                AuthProvider = AuthProvider
             };
         }
     }

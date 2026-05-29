@@ -9,8 +9,13 @@ namespace TableMasterApi.DAL
     /// </summary>
     public class AuthDAL : IAuthDAL
     {
-        public bool VerifyPassword(string hashedPassword, string plainPassword)
+        public bool VerifyPassword(string? hashedPassword, string plainPassword)
         {
+            if (string.IsNullOrWhiteSpace(hashedPassword))
+            {
+                return false;
+            }
+
             var passwordHasher = new PasswordHasher<UserIn>();
 
             // Vérifier si le mot de passe en clair correspond au mot de passe haché

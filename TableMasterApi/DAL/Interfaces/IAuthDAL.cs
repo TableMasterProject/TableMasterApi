@@ -7,6 +7,6 @@ namespace TableMasterApi.DAL.Interfaces
     /// </summary>
     public interface IAuthDAL
     {
-        bool VerifyPassword(string hashedPassword, string plainPassword);
+        bool VerifyPassword(string? hashedPassword, string plainPassword);
     }
 }

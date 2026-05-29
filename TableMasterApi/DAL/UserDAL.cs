@@ -27,8 +27,9 @@ namespace TableMasterApi.DAL
             {
                 connection.Open();
                 var query = @"
-                    SELECT 
+                    SELECT
                         u.""Id"", u.""Email"", u.""Password"", u.""FirstName"", u.""LastName"", u.""AccountType"", u.""CreatedAt"",
+                        u.""AuthProvider"", u.""GoogleSubject"",
                         r.""Id"" AS ""RestaurantId""
                     FROM ""User"" u
                     LEFT JOIN ""Restaurant"" r ON u.""Id"" = r.""UserId""
@@ -46,8 +47,9 @@ namespace TableMasterApi.DAL
             {
                 connection.Open();
                 var query = @"
-                    SELECT 
+                    SELECT
                         u.""Id"", u.""Email"", u.""Password"", u.""FirstName"", u.""LastName"", u.""AccountType"", u.""CreatedAt"",
+                        u.""AuthProvider"", u.""GoogleSubject"",
                         r.""Id"" AS ""RestaurantId""
                     FROM ""User"" u
                     LEFT JOIN ""Restaurant"" r ON u.""Id"" = r.""UserId""
@@ -56,6 +58,25 @@ namespace TableMasterApi.DAL
                 var result = await connection.QueryAsync<UserDb>(query, new { Email = email });
                 UserDb? user = result.FirstOrDefault();
                 return user;
+            }
+        }
+
+        public async Task<UserDb?> GetUserByGoogleSubject(string googleSubject)
+        {
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            {
+                connection.Open();
+                var query = @"
+                    SELECT
+                        u.""Id"", u.""Email"", u.""Password"", u.""FirstName"", u.""LastName"", u.""AccountType"", u.""CreatedAt"",
+                        u.""AuthProvider"", u.""GoogleSubject"",
+                        r.""Id"" AS ""RestaurantId""
+                    FROM ""User"" u
+                    LEFT JOIN ""Restaurant"" r ON u.""Id"" = r.""UserId""
+                    WHERE u.""GoogleSubject"" = @GoogleSubject";
+
+                var result = await connection.QueryAsync<UserDb>(query, new { GoogleSubject = googleSubject });
+                return result.FirstOrDefault();
             }
         }
 
@@ -78,6 +99,31 @@ namespace TableMasterApi.DAL
                     RETURNING ""Id"", ""Email"", ""FirstName"", ""LastName"", ""AccountType"", ""CreatedAt""";
 
                 var insertedUser = await connection.QuerySingleAsync<UserOut>(query, user);
+                return insertedUser;
+            }
+        }
+
+        public async Task<UserOut> AddGoogleUser(GoogleRegisterIn user, string googleSubject)
+        {
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            {
+                connection.Open();
+
+                var query = @"
+                    INSERT INTO ""User"" (""Email"", ""Password"", ""FirstName"", ""LastName"", ""AccountType"", ""AuthProvider"", ""GoogleSubject"")
+                    VALUES (@Email, NULL, @FirstName, @LastName, @AccountType, 'Google', @GoogleSubject)
+                    RETURNING ""Id"", ""Email"", ""FirstName"", ""LastName"", ""AccountType"", ""CreatedAt"", ""AuthProvider""";
+
+                var insertedUser = await connection.QuerySingleAsync<UserOut>(
+                    query,
+                    new
+                    {
+                        user.Email,
+                        user.FirstName,
+                        user.LastName,
+                        user.AccountType,
+                        GoogleSubject = googleSubject
+                    });
                 return insertedUser;
             }
         }

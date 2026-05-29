@@ -47,6 +47,7 @@ builder.Services.Configure<ConfigPerso>(builder.Configuration.GetSection("Config
 builder.Services.AddSingleton(configPerso);
 builder.Services.AddSingleton<JwtService>();
 builder.Services.AddSingleton<FcmService>();
+builder.Services.AddSingleton<GoogleAuthService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddSingleton<IDbConnectionFactory, PostgresConnectionFactory>();
 builder.Services.AddHttpClient<GoogleMapsService>();

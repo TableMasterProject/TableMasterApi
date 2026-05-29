@@ -11,7 +11,9 @@ namespace TableMasterApi.DAL.Interfaces
     {
         Task<UserDb?> GetUserById(long id);
         Task<UserDb?> GetUserByEmail(string email);
+        Task<UserDb?> GetUserByGoogleSubject(string googleSubject);
         Task<UserOut> AddUser(UserIn user);
+        Task<UserOut> AddGoogleUser(GoogleRegisterIn user, string googleSubject);
         Task<UserOut> PutUser(long idUser, UserIn user);
         Task<bool> PutPassword(long userId, string newPassword);
         Task<bool> DeletePassword(long id);

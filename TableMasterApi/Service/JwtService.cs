@@ -76,6 +76,65 @@ namespace TableMasterApi.Service
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
 
+        public string GenerateGoogleRegistrationToken(string googleSubject, string email, string firstName, string lastName)
+        {
+            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
+            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+            var claims = new[]
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, googleSubject),
+                new Claim(JwtRegisteredClaimNames.Email, email),
+                new Claim(JwtRegisteredClaimNames.GivenName, firstName),
+                new Claim(JwtRegisteredClaimNames.FamilyName, lastName),
+                new Claim("token_use", "google_registration")
+            };
+
+            var token = new JwtSecurityToken(
+                issuer: _issuer,
+                audience: _audience,
+                claims: claims,
+                expires: DateTime.UtcNow.AddMinutes(15),
+                signingCredentials: credentials
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        public GoogleRegistrationClaims ValidateGoogleRegistrationToken(string token)
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var principal = tokenHandler.ValidateToken(token, new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ValidIssuer = _issuer,
+                ValidAudience = _audience,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey)),
+                ClockSkew = TimeSpan.FromMinutes(1)
+            }, out _);
+
+            var tokenUse = principal.FindFirst("token_use")?.Value;
+            if (tokenUse != "google_registration")
+            {
+                throw new SecurityTokenException("Token Google temporaire invalide.");
+            }
+
+            return new GoogleRegistrationClaims
+            {
+                GoogleSubject = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                    ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                    ?? throw new SecurityTokenException("Identifiant Google manquant."),
+                Email = principal.FindFirst(JwtRegisteredClaimNames.Email)?.Value
+                    ?? principal.FindFirst(ClaimTypes.Email)?.Value
+                    ?? throw new SecurityTokenException("Email Google manquant."),
+                FirstName = principal.FindFirst(JwtRegisteredClaimNames.GivenName)?.Value ?? string.Empty,
+                LastName = principal.FindFirst(JwtRegisteredClaimNames.FamilyName)?.Value ?? string.Empty
+            };
+        }
+
         public string GenerateRefreshToken()
         {
             var randomNumber = new byte[64];
@@ -90,5 +149,13 @@ namespace TableMasterApi.Service
             var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(token));
             return Convert.ToBase64String(bytes);
         }
+    }
+
+    public class GoogleRegistrationClaims
+    {
+        public required string GoogleSubject { get; set; }
+        public required string Email { get; set; }
+        public string FirstName { get; set; } = string.Empty;
+        public string LastName { get; set; } = string.Empty;
     }
 }
