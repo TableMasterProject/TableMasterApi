@@ -5,6 +5,7 @@ using DbUp;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using Sentry;
 using TableMasterApi.DAL;
 using TableMasterApi.DAL.Handlers;
 using TableMasterApi.DAL.Interfaces;
@@ -14,6 +15,8 @@ using TableMasterApi.Model;
 using TableMasterApi.Service;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.UseSentry();
 
 Dapper.SqlMapper.AddTypeHandler(new PostgresTimeSpanHandler());
 
@@ -209,6 +212,20 @@ app.UseAuthorization();
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/ready");
 app.MapHub<ReservationHub>("/reservationHub");
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapGet("/api/monitoring/sentry-test", () =>
+    {
+        var sentryId = SentrySdk.CaptureMessage("Hello Sentry from TableMasterApi");
+        return Results.Ok(new
+        {
+            message = "Sentry test event captured.",
+            sentryId = sentryId.ToString()
+        });
+    });
+}
+
 app.MapControllers();
 
 app.Run();
