@@ -14,6 +14,7 @@ Ces instructions s'appliquent au projet `TableMasterApi/`. Repondre a l'utilisat
 - Auth : JWT Bearer.
 - Realtime : SignalR.
 - Notifications : Firebase Admin.
+- Monitoring : Sentry ASP.NET Core.
 - Tests : xUnit, Moq, FluentAssertions.
 
 ## Commandes
@@ -66,6 +67,8 @@ Les controllers doivent rester minces. Placer les acces base dans les DAL et la 
 - Refresh tokens et persistance auth dans les DAL auth/user.
 - SignalR reservations : `ReservationHub` mappe sur `/reservationHub`.
 - Health checks : `/health` et `/ready`.
+- Sentry API : config via section `Sentry` (`Sentry:Dsn` en User Secrets local, `Sentry__Dsn` en env prod), jamais de DSN en dur.
+- Test Sentry API : endpoint `GET /api/monitoring/sentry-test` disponible uniquement en environnement `Development`.
 - Swagger actif en developpement ou si `Features:EnableSwagger` est active.
 
 ## Base de Donnees
@@ -96,5 +99,6 @@ Les controllers doivent rester minces. Placer les acces base dans les DAL et la 
 ## Securite
 
 - Ne pas afficher ni commiter `.env`, connection strings locales, user secrets, cles Firebase ou secrets JWT.
+- Ne pas afficher ni commiter le DSN Sentry reel ; utiliser User Secrets en local et variables d'environnement en deploiement.
 - Ne pas editer `bin/`, `obj/`, `.vs/` ou sorties generees sauf demande explicite.
 - Garder les valeurs sensibles dans la configuration locale ou les secrets, jamais dans le code.

@@ -33,6 +33,7 @@ Cette procédure couvre **un déploiement complet** de l'API .NET sur un serveur
 | `Jwt__Issuer` / `Jwt__Audience` | env serveur | Identifiants JWT |
 | `tablemaster-firebase.json` | volume monté | Clé service-account Firebase Admin (FCM) |
 | `GoogleMaps__ApiKey` | env serveur | Clé API Maps |
+| `Sentry__Dsn` | env serveur / User Secrets local | DSN Sentry API, jamais commité |
 
 ---
 
@@ -113,6 +114,8 @@ curl -fsS -H "x-api-version: 1.0" https://api.tablemaster.lmpe.ovh/api/Restauran
 
 Tous les checks doivent être OK avant de considérer le déploiement validé.
 
+En environnement `Development`, l'endpoint `GET /api/monitoring/sentry-test` envoie un message de test dans Sentry. En production, vérifier Sentry via le dashboard après un déploiement ou une erreur contrôlée côté staging.
+
 ---
 
 ## 3. Rollback
@@ -168,7 +171,7 @@ Tests de restauration **mensuels** (procédure dans `docs/POSTGRESQL_API_TESTS.m
 | --- | --- |
 | API runtime | `docker compose logs -f api --tail=200` |
 | Logs Nginx (front) | `journalctl -u nginx -f` |
-| Erreurs applicatives | Sentry dashboard (quand branché) |
+| Erreurs applicatives | Dashboard Sentry API |
 | Métriques santé | `curl /health` et `/ready` |
 
 ---

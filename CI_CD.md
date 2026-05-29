@@ -127,6 +127,14 @@ Pour déployer automatiquement après les tests, ajouter un step au workflow:
 
 Ajouter le secret **DEPLOY_KEY** dans **Settings → Secrets and variables → Actions**
 
+## 🔎 Monitoring Sentry
+
+L'API utilise `Sentry.AspNetCore` pour remonter les exceptions et traces HTTP. Le DSN ne doit pas être commité :
+
+- local : `dotnet user-secrets set "Sentry:Dsn" "<dsn-api>"`
+- production : variable d'environnement `Sentry__Dsn`
+- test dev : appeler `GET /api/monitoring/sentry-test`
+
 ---
 
 ## 📚 Ressources

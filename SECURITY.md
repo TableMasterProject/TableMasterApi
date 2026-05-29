@@ -15,7 +15,7 @@
 | A06 Vulnerable Components | ⚠️ | Dependabot à activer (manuel pour l'instant) |
 | A07 Identification & Auth Failures | ✅ | JWT court + refresh token rotation |
 | A08 Software & Data Integrity | ✅ | Migrations DbUp signées en source, CI vérifiée |
-| A09 Logging & Monitoring | ⚠️ | `ILogger` présent, Sentry à brancher |
+| A09 Logging & Monitoring | ✅ | `ILogger` + Sentry ASP.NET Core |
 | A10 Server-Side Request Forgery | ✅ | Aucun proxy d'URL utilisateur côté API |
 
 ---
@@ -106,9 +106,11 @@
 **État actuel :**
 - `ILogger<T>` injecté dans services et controllers sensibles (Auth, JWT, refresh).
 - Logs structurés via le provider par défaut ASP.NET.
+- Sentry ASP.NET Core est branché dans `Program.cs` pour collecter les exceptions et traces HTTP.
+- Le DSN Sentry reste hors code : User Secrets en local (`Sentry:Dsn`) et variable d'environnement en prod (`Sentry__Dsn`).
+- Un endpoint de vérification existe uniquement en développement : `GET /api/monitoring/sentry-test`.
 
 **À compléter** :
-- Brancher **Sentry .NET SDK** dans `Program.cs` pour collecter exceptions + traces.
 - Ajouter un middleware de `correlationId` pour tracer une requête de bout en bout.
 - Activer audit log sur opérations sensibles (login, refresh, logout, delete account).
 
