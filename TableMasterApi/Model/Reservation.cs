@@ -16,8 +16,21 @@
         public DateTime ReservationDate { get; set; }
         public int NumberOfPeople { get; set; }
         public string? SpecialRequest { get; set; }
+        public string? GuestName { get; set; }
+        public string? GuestPhone { get; set; }
         public ReservationStatus Status { get; set; }
     }
+
+    public class QuickReservationIn
+    {
+        public long TableId { get; set; }
+        public DateTime ReservationDate { get; set; }
+        public int NumberOfPeople { get; set; }
+        public required string GuestName { get; set; }
+        public string? GuestPhone { get; set; }
+        public string? SpecialRequest { get; set; }
+    }
+
     public class ReservationOut : ReservationIn
     {
         public long Id { get; set; }

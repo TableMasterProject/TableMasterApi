@@ -21,9 +21,9 @@ namespace TableMasterApi.DAL
         public async Task<ReservationOut> CreateReservationAsync(ReservationIn reservation)
         {
             var query = @"
-                INSERT INTO ""Reservation"" (""UserId"", ""TableId"", ""RestaurantId"", ""ReservationDate"", ""NumberOfPeople"", ""SpecialRequest"", ""Status"")
-                VALUES (@UserId, @TableId, @RestaurantId, @ReservationDate, @NumberOfPeople, @SpecialRequest, @Status)
-                RETURNING ""Id"", ""UserId"", ""TableId"", ""RestaurantId"", ""ReservationDate"", ""NumberOfPeople"", ""SpecialRequest"", ""CreatedAt"", ""Status"";";
+                INSERT INTO ""Reservation"" (""UserId"", ""TableId"", ""RestaurantId"", ""ReservationDate"", ""NumberOfPeople"", ""SpecialRequest"", ""GuestName"", ""GuestPhone"", ""Status"")
+                VALUES (@UserId, @TableId, @RestaurantId, @ReservationDate, @NumberOfPeople, @SpecialRequest, @GuestName, @GuestPhone, @Status)
+                RETURNING ""Id"", ""UserId"", ""TableId"", ""RestaurantId"", ""ReservationDate"", ""NumberOfPeople"", ""SpecialRequest"", ""GuestName"", ""GuestPhone"", ""CreatedAt"", ""Status"";";
 
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
@@ -35,6 +35,8 @@ namespace TableMasterApi.DAL
                     reservation.ReservationDate,
                     reservation.NumberOfPeople,
                     reservation.SpecialRequest,
+                    reservation.GuestName,
+                    reservation.GuestPhone,
                     Status = (short)reservation.Status
                 });
                 return result;
@@ -50,7 +52,7 @@ namespace TableMasterApi.DAL
                             UPDATE ""Reservation"" 
                                 SET ""Status"" = @ReservationStatus
                             WHERE ""Id"" = @Id
-                            RETURNING ""Id"", ""UserId"", ""TableId"", ""RestaurantId"", ""ReservationDate"", ""NumberOfPeople"", ""SpecialRequest"", ""CreatedAt"", ""Status""";
+                            RETURNING ""Id"", ""UserId"", ""TableId"", ""RestaurantId"", ""ReservationDate"", ""NumberOfPeople"", ""SpecialRequest"", ""GuestName"", ""GuestPhone"", ""CreatedAt"", ""Status""";
                 var updatedReservation = await connection.QuerySingleAsync<ReservationOut>(query, new
                 {
                     Id = id,
@@ -90,7 +92,7 @@ namespace TableMasterApi.DAL
 
             var query = $@"
         SELECT 
-            R.""Id"", R.""UserId"", R.""TableId"", R.""RestaurantId"", R.""ReservationDate"", R.""NumberOfPeople"", R.""SpecialRequest"", R.""CreatedAt"", R.""Status"",
+            R.""Id"", R.""UserId"", R.""TableId"", R.""RestaurantId"", R.""ReservationDate"", R.""NumberOfPeople"", R.""SpecialRequest"", R.""GuestName"", R.""GuestPhone"", R.""CreatedAt"", R.""Status"",
             U.""Id"", U.""FirstName"", U.""LastName"", U.""Email"", U.""AccountType"", U.""CreatedAt"",
             T.""Id"", T.""RestaurantId"", T.""RoomId"", T.""TableNumber"", T.""NumberOfSeats"", T.""Shape"",
             T.""PositionX"", T.""PositionY"", T.""Width"", T.""Height"", T.""RotationDegrees"", T.""CreatedAt"",
@@ -145,6 +147,8 @@ namespace TableMasterApi.DAL
                 R.""ReservationDate"", 
                 R.""NumberOfPeople"", 
                 R.""SpecialRequest"", 
+                R.""GuestName"",
+                R.""GuestPhone"",
                 R.""CreatedAt"",
                 R.""Status"",
                 U.""Id"" AS ""Id"",

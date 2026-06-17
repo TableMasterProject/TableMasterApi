@@ -87,7 +87,16 @@ namespace TableMasterApi.Tests.TestSupport
             NumberOfPeople = 2
         };
 
-        public static ReservationOut ReservationOut(long id = 1, long restaurantId = 10, long tableId = 4, long userId = 42) => new()
+        public static QuickReservationIn QuickReservationIn(long tableId = 4) => new()
+        {
+            TableId = tableId,
+            ReservationDate = DateTime.UtcNow.AddDays(1),
+            NumberOfPeople = 2,
+            GuestName = "Client Telephone",
+            GuestPhone = "0601020304"
+        };
+
+        public static ReservationOut ReservationOut(long id = 1, long restaurantId = 10, long tableId = 4, long? userId = 42) => new()
         {
             Id = id,
             RestaurantId = restaurantId,

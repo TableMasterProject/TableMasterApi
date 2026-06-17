@@ -49,6 +49,35 @@ namespace TableMasterApi.Controllers
             await _fcmService.SendNotificationAsync(tokens, title, body, data);
         }
 
+        private async Task<ActionResult?> ValidateTableAvailabilityAsync(long tableId, DateTime reservationDate)
+        {
+            var search = new SearchReservations
+            {
+                tableId = tableId,
+                minDate = DateOnly.FromDateTime(reservationDate),
+                maxDate = DateOnly.FromDateTime(reservationDate),
+                Statuses = new List<ReservationStatus> { ReservationStatus.Validee }
+            };
+
+            var existingReservations = await _reservationDAL.GetReservations(search);
+            if (existingReservations != null && existingReservations.Count() > 0)
+            {
+                TimeSpan margin = TimeSpan.FromMinutes(90);
+
+                foreach (var res in existingReservations)
+                {
+                    var diff = (reservationDate - res.ReservationDate).Duration();
+
+                    if (diff < margin)
+                    {
+                        return Conflict($"La table est déjà occupée. Une marge de 1h30 est requise (conflit avec la réservation de {res.ReservationDate:HH:mm}).");
+                    }
+                }
+            }
+
+            return null;
+        }
+
         [Authorize]
         [HttpGet("")]
         public async Task<ActionResult<IEnumerable<ReservationOut>>> GetReservations([FromQuery] SearchReservations searchReservations)
@@ -129,33 +158,9 @@ namespace TableMasterApi.Controllers
                 if (table.NumberOfSeats < reservation.NumberOfPeople)
                     return BadRequest("La table ne contient pas assez de places.");
 
-                var search = new SearchReservations
-                {
-                    tableId = reservation.TableId,
-                    minDate = DateOnly.FromDateTime(reservation.ReservationDate),
-                    maxDate = DateOnly.FromDateTime(reservation.ReservationDate),
-                    Statuses = new List<ReservationStatus> { ReservationStatus.Validee }
-                };
-
-                // On récupère les réservations existantes via ta méthode DAL
-                var existingReservations = await _reservationDAL.GetReservations(search);
-
-                if (existingReservations != null && existingReservations.Count() > 0)
-                {
-                    // On définit la marge de sécurité (90 minutes)
-                    TimeSpan margin = TimeSpan.FromMinutes(90);
-
-                    foreach (var res in existingReservations)
-                    {
-                        // Calcul de l'écart entre la réservation existante et la nouvelle demande
-                        var diff = (reservation.ReservationDate - res.ReservationDate).Duration();
-
-                        if (diff < margin)
-                        {
-                            return Conflict($"La table est déjà occupée. Une marge de 1h30 est requise (conflit avec la réservation de {res.ReservationDate:HH:mm}).");
-                        }
-                    }
-                }
+                var availabilityError = await ValidateTableAvailabilityAsync(reservation.TableId.Value, reservation.ReservationDate);
+                if (availabilityError != null)
+                    return availabilityError;
 
                 var restaurant = await _restaurantDAL.GetRestaurantById(reservation.RestaurantId.Value);
                 if (restaurant == null)
@@ -213,6 +218,79 @@ namespace TableMasterApi.Controllers
                 return StatusCode(500, e.Message);
             }
             
+        }
+
+        [Authorize]
+        [HttpPost("Restaurant/{restaurantId}/Quick")]
+        public async Task<ActionResult<ReservationOut>> CreateQuickReservation(long restaurantId, [FromBody] QuickReservationIn reservation)
+        {
+            try
+            {
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
+                if (reservation == null)
+                    return BadRequest("Données de réservation invalides.");
+
+                if (restaurantId <= 0 || reservation.TableId <= 0)
+                    return BadRequest("La table et le restaurant sont obligatoires.");
+
+                if (reservation.NumberOfPeople <= 0)
+                    return BadRequest("Le nombre de personnes doit être supérieur à zéro.");
+
+                var guestName = reservation.GuestName?.Trim();
+                if (string.IsNullOrWhiteSpace(guestName))
+                    return BadRequest("Le nom du client est obligatoire.");
+
+                var restaurant = await _restaurantDAL.GetRestaurantById(restaurantId);
+                if (restaurant == null)
+                    return NotFound("Le restaurant n'existe pas.");
+
+                if (restaurant.UserId != idUserToken)
+                    return Unauthorized("Vous n'êtes pas autorisé à créer une réservation pour ce restaurant.");
+
+                var table = await _tableDAL.GetTablesById(reservation.TableId);
+                if (table == null)
+                    return NotFound("La table n'existe pas.");
+
+                if (table.RestaurantId != restaurantId)
+                    return BadRequest("La table ne fait pas partie de ce restaurant.");
+
+                if (table.NumberOfSeats < reservation.NumberOfPeople)
+                    return BadRequest("La table ne contient pas assez de places.");
+
+                var availabilityError = await ValidateTableAvailabilityAsync(reservation.TableId, reservation.ReservationDate);
+                if (availabilityError != null)
+                    return availabilityError;
+
+                var guestPhone = string.IsNullOrWhiteSpace(reservation.GuestPhone)
+                    ? null
+                    : reservation.GuestPhone.Trim();
+
+                var input = new ReservationIn
+                {
+                    UserId = null,
+                    TableId = reservation.TableId,
+                    RestaurantId = restaurantId,
+                    ReservationDate = reservation.ReservationDate,
+                    NumberOfPeople = reservation.NumberOfPeople,
+                    SpecialRequest = reservation.SpecialRequest,
+                    GuestName = guestName,
+                    GuestPhone = guestPhone,
+                    Status = ReservationStatus.Validee
+                };
+
+                var created = await _reservationDAL.CreateReservationAsync(input);
+
+                await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + restaurantId)
+                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
+
+                return Ok(created);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, e.Message);
+            }
         }
 
         [Authorize]

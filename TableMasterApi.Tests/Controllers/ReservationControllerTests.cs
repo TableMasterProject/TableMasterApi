@@ -234,6 +234,153 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task CreateQuickReservation_ShouldReturnOkAndSendRestaurantMessage_WhenReservationIsValid()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var tableDal = new Mock<ITableDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var hub = ExternalServiceTestHelper.CreateReservationHub();
+            var controller = CreateController(reservationDal, tableDal, restaurantDal, hubDouble: hub);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+            var input = TestData.QuickReservationIn();
+            input.GuestName = "  Martin  ";
+            input.GuestPhone = "  0601020304  ";
+            var created = TestData.ReservationOut(userId: null);
+            created.Status = ReservationStatus.Validee;
+            created.GuestName = "Martin";
+            created.GuestPhone = "0601020304";
+
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(id: 10, userId: 42));
+            tableDal.Setup(x => x.GetTablesById(4)).ReturnsAsync(TestData.TableOut());
+            reservationDal.Setup(x => x.GetReservations(It.IsAny<SearchReservations>())).ReturnsAsync([]);
+            reservationDal.Setup(x => x.CreateReservationAsync(It.Is<ReservationIn>(reservation =>
+                    reservation.UserId == null &&
+                    reservation.RestaurantId == 10 &&
+                    reservation.TableId == 4 &&
+                    reservation.Status == ReservationStatus.Validee &&
+                    reservation.GuestName == "Martin" &&
+                    reservation.GuestPhone == "0601020304")))
+                .ReturnsAsync(created);
+
+            var result = await controller.CreateQuickReservation(10, input);
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            ok.Value.Should().BeEquivalentTo(created);
+            hub.Clients.Verify(x => x.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + 10), Times.Once);
+            hub.Clients.Verify(x => x.Group(It.Is<string>(group => group.StartsWith(ReservationHub.USER_GROUP_PREFIX))), Times.Never);
+            hub.ClientProxy.Verify(
+                x => x.SendCoreAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, It.IsAny<object?[]>(), It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task CreateQuickReservation_ShouldReturnUnauthorized_WhenCurrentUserDoesNotOwnRestaurant()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var tableDal = new Mock<ITableDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(reservationDal, tableDal, restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(id: 10, userId: 99));
+
+            var result = await controller.CreateQuickReservation(10, TestData.QuickReservationIn());
+
+            result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+            tableDal.Verify(x => x.GetTablesById(It.IsAny<long>()), Times.Never);
+            reservationDal.Verify(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task CreateQuickReservation_ShouldReturnBadRequest_WhenGuestNameIsMissing()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(reservationDal: reservationDal, restaurantDal: restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+            var input = TestData.QuickReservationIn();
+            input.GuestName = " ";
+
+            var result = await controller.CreateQuickReservation(10, input);
+
+            result.Result.Should().BeOfType<BadRequestObjectResult>();
+            restaurantDal.Verify(x => x.GetRestaurantById(It.IsAny<long>()), Times.Never);
+            reservationDal.Verify(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task CreateQuickReservation_ShouldReturnBadRequest_WhenTableBelongsToAnotherRestaurant()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var tableDal = new Mock<ITableDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(reservationDal, tableDal, restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(id: 10, userId: 42));
+            tableDal.Setup(x => x.GetTablesById(4)).ReturnsAsync(TestData.TableOut(restaurantId: 99));
+
+            var result = await controller.CreateQuickReservation(10, TestData.QuickReservationIn());
+
+            result.Result.Should().BeOfType<BadRequestObjectResult>();
+            reservationDal.Verify(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task CreateQuickReservation_ShouldReturnBadRequest_WhenTableCapacityIsTooSmall()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var tableDal = new Mock<ITableDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(reservationDal, tableDal, restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+            var input = TestData.QuickReservationIn();
+            input.NumberOfPeople = 5;
+
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(id: 10, userId: 42));
+            tableDal.Setup(x => x.GetTablesById(4)).ReturnsAsync(TestData.TableOut(seats: 4));
+
+            var result = await controller.CreateQuickReservation(10, input);
+
+            result.Result.Should().BeOfType<BadRequestObjectResult>();
+            reservationDal.Verify(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task CreateQuickReservation_ShouldReturnConflict_WhenValidatedReservationIsInsideSafetyMargin()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var tableDal = new Mock<ITableDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(reservationDal, tableDal, restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+            var requestedDate = new DateTime(2026, 5, 12, 20, 0, 0, DateTimeKind.Utc);
+            var input = TestData.QuickReservationIn();
+            input.ReservationDate = requestedDate;
+
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(id: 10, userId: 42));
+            tableDal.Setup(x => x.GetTablesById(4)).ReturnsAsync(TestData.TableOut());
+            reservationDal.Setup(x => x.GetReservations(It.IsAny<SearchReservations>()))
+                .ReturnsAsync(
+                [
+                    new ReservationOut
+                    {
+                        Id = 1,
+                        TableId = 4,
+                        RestaurantId = 10,
+                        ReservationDate = requestedDate.AddMinutes(60),
+                        NumberOfPeople = 2,
+                        Status = ReservationStatus.Validee
+                    }
+                ]);
+
+            var result = await controller.CreateQuickReservation(10, input);
+
+            result.Result.Should().BeOfType<ConflictObjectResult>();
+            reservationDal.Verify(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()), Times.Never);
+        }
+
+        [Fact]
         public async Task UpdateReservationStatus_ShouldReturnUnauthorized_WhenCurrentUserIsNotRestaurantOwnerOrReservationUser()
         {
             var reservationDal = new Mock<IReservationDAL>();
