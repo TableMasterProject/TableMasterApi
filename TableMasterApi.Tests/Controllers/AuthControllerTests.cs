@@ -136,6 +136,111 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task ForgotPassword_ShouldPersistResetTokenAndSendEmail_WhenUserExists()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var appLinkService = new Mock<IAppLinkService>();
+            var emailNotificationService = new Mock<IEmailNotificationService>();
+            var user = new UserDb
+            {
+                Id = 42,
+                Email = "reset@example.com",
+                Password = "hashed-password",
+                FirstName = "Reset",
+                LastName = "User",
+                AccountType = 1,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            string? rawToken = null;
+            string? savedHash = null;
+            DateTime savedExpiry = default;
+
+            userDal.Setup(x => x.GetUserByEmail("reset@example.com")).ReturnsAsync(user);
+            userDal.Setup(x => x.SavePasswordResetToken(user.Id, It.IsAny<string>(), It.IsAny<DateTime>()))
+                .Callback<long, string, DateTime>((_, hash, expiry) =>
+                {
+                    savedHash = hash;
+                    savedExpiry = expiry;
+                })
+                .ReturnsAsync(true);
+            appLinkService.Setup(x => x.BuildPasswordResetLink(It.IsAny<string>()))
+                .Callback<string>(token => rawToken = token)
+                .Returns("https://app.example/reset-password?token=value");
+
+            var controller = new AuthController(
+                userDal.Object,
+                authDal.Object,
+                _jwtService,
+                appLinkService.Object,
+                emailNotificationService.Object);
+
+            var result = await controller.ForgotPassword(new ForgotPasswordRequest { Email = " reset@example.com " });
+
+            result.Should().BeOfType<OkObjectResult>();
+            rawToken.Should().NotBeNullOrWhiteSpace();
+            savedHash.Should().Be(_jwtService.HashToken(rawToken!));
+            savedExpiry.Should().BeAfter(DateTime.UtcNow.AddMinutes(55));
+            userDal.Verify(x => x.DeleteExpiredPasswordResetTokens(), Times.Once);
+            emailNotificationService.Verify(x => x.SendPasswordResetAsync(
+                It.Is<UserOut>(u => u.Id == user.Id && u.Email == user.Email),
+                "https://app.example/reset-password?token=value",
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task ForgotPassword_ShouldReturnOkWithoutCreatingToken_WhenUserDoesNotExist()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var emailNotificationService = new Mock<IEmailNotificationService>();
+
+            userDal.Setup(x => x.GetUserByEmail("missing@example.com")).ReturnsAsync((UserDb?)null);
+
+            var controller = new AuthController(
+                userDal.Object,
+                authDal.Object,
+                _jwtService,
+                emailNotificationService: emailNotificationService.Object);
+
+            var result = await controller.ForgotPassword(new ForgotPasswordRequest { Email = "missing@example.com" });
+
+            result.Should().BeOfType<OkObjectResult>();
+            userDal.Verify(x => x.SavePasswordResetToken(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
+            emailNotificationService.Verify(x => x.SendPasswordResetAsync(It.IsAny<UserOut>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ResetPassword_ShouldUpdatePasswordAndInvalidateTokens_WhenResetTokenIsValid()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var resetToken = _jwtService.GenerateRefreshToken();
+            var hashedToken = _jwtService.HashToken(resetToken);
+
+            userDal.Setup(x => x.GetUserIdByPasswordResetToken(hashedToken)).ReturnsAsync(42L);
+            userDal.Setup(x => x.PutPassword(42, "NewPassword!2")).ReturnsAsync(true);
+            userDal.Setup(x => x.DeletePasswordResetTokensForUser(42)).ReturnsAsync(true);
+            userDal.Setup(x => x.DeleteAllRefreshTokensForUser(42)).ReturnsAsync(true);
+
+            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+
+            var result = await controller.ResetPassword(new ResetPasswordRequest
+            {
+                Token = resetToken,
+                NewPassword = "NewPassword!2"
+            });
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            ok.Value.Should().Be(true);
+            userDal.Verify(x => x.GetUserIdByPasswordResetToken(hashedToken), Times.Once);
+            userDal.Verify(x => x.PutPassword(42, "NewPassword!2"), Times.Once);
+            userDal.Verify(x => x.DeletePasswordResetTokensForUser(42), Times.Once);
+            userDal.Verify(x => x.DeleteAllRefreshTokensForUser(42), Times.Once);
+        }
+
+        [Fact]
         public async Task Refresh_ShouldRotateTokens_WhenRefreshTokenIsValid()
         {
             var userDal = new Mock<IUserDAL>();

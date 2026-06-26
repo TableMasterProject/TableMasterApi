@@ -44,12 +44,22 @@ if (string.IsNullOrWhiteSpace(configPerso.Issuer) || string.IsNullOrWhiteSpace(c
 }
 
 builder.Services.Configure<ConfigPerso>(builder.Configuration.GetSection("ConfigPerso"));
+builder.Services.Configure<BrevoOptions>(builder.Configuration.GetSection("Brevo"));
+builder.Services.Configure<AppLinksOptions>(builder.Configuration.GetSection("AppLinks"));
 builder.Services.AddSingleton(configPerso);
 builder.Services.AddSingleton<JwtService>();
 builder.Services.AddSingleton<FcmService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddSingleton<IDbConnectionFactory, PostgresConnectionFactory>();
 builder.Services.AddHttpClient<GoogleMapsService>();
+builder.Services.AddScoped<IAppLinkService, AppLinkService>();
+builder.Services.AddScoped<IEmailNotificationService, EmailNotificationService>();
+builder.Services.AddHttpClient<IEmailService, BrevoEmailService>((serviceProvider, httpClient) =>
+{
+    var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<BrevoOptions>>().Value;
+    var brevoBaseUrl = string.IsNullOrWhiteSpace(options.BaseUrl) ? "https://api.brevo.com/v3/" : options.BaseUrl;
+    httpClient.BaseAddress = new Uri(brevoBaseUrl.EndsWith('/') ? brevoBaseUrl : brevoBaseUrl + "/");
+});
 
 builder.Services.AddCors(options =>
 {

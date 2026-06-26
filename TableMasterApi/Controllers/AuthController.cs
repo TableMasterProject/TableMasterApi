@@ -15,12 +15,21 @@ namespace TableMasterApi.Controllers
         private readonly IUserDAL _userDAL;
         private readonly IAuthDAL _authDAL;
         private readonly JwtService _jwtService;
+        private readonly IAppLinkService _appLinkService;
+        private readonly IEmailNotificationService _emailNotificationService;
 
-        public AuthController(IUserDAL userDAL, IAuthDAL authDAL, JwtService jwtService)
+        public AuthController(
+            IUserDAL userDAL,
+            IAuthDAL authDAL,
+            JwtService jwtService,
+            IAppLinkService? appLinkService = null,
+            IEmailNotificationService? emailNotificationService = null)
         {
             _jwtService = jwtService;
             _userDAL = userDAL;
             _authDAL = authDAL;
+            _appLinkService = appLinkService ?? new AppLinkService(Microsoft.Extensions.Options.Options.Create(new AppLinksOptions()));
+            _emailNotificationService = emailNotificationService ?? NullEmailNotificationService.Instance;
         }
 
         [EnableRateLimiting("AuthPolicy")]
@@ -54,6 +63,60 @@ namespace TableMasterApi.Controllers
                 AccessToken = _jwtService.GenerateAccessToken(user.Id),
                 RefreshToken = refreshToken
             });
+        }
+
+        [EnableRateLimiting("AuthPolicy")]
+        [HttpPost("forgot-password")]
+        public async Task<ActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Email))
+            {
+                return BadRequest();
+            }
+
+            var user = await _userDAL.GetUserByEmail(request.Email.Trim());
+            if (user != null)
+            {
+                await _userDAL.DeleteExpiredPasswordResetTokens();
+
+                var resetToken = _jwtService.GenerateRefreshToken();
+                var hashedResetToken = _jwtService.HashToken(resetToken);
+
+                await _userDAL.SavePasswordResetToken(user.Id, hashedResetToken, DateTime.UtcNow.AddHours(1));
+                var resetLink = _appLinkService.BuildPasswordResetLink(resetToken);
+
+                await _emailNotificationService.SendPasswordResetAsync(user.ToPublicUser(), resetLink);
+            }
+
+            return Ok("Si un compte existe pour cet email, un lien de reinitialisation a ete envoye.");
+        }
+
+        [EnableRateLimiting("AuthPolicy")]
+        [HttpPost("reset-password")]
+        public async Task<ActionResult<bool>> ResetPassword([FromBody] ResetPasswordRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Token) || string.IsNullOrWhiteSpace(request.NewPassword))
+            {
+                return BadRequest();
+            }
+
+            var hashedToken = _jwtService.HashToken(request.Token);
+            var userId = await _userDAL.GetUserIdByPasswordResetToken(hashedToken);
+            if (userId == null)
+            {
+                return BadRequest("Lien invalide ou expire.");
+            }
+
+            var passwordChanged = await _userDAL.PutPassword(userId.Value, request.NewPassword);
+            if (!passwordChanged)
+            {
+                return NotFound("Utilisateur introuvable.");
+            }
+
+            await _userDAL.DeletePasswordResetTokensForUser(userId.Value);
+            await _userDAL.DeleteAllRefreshTokensForUser(userId.Value);
+
+            return Ok(true);
         }
 
         [EnableRateLimiting("AuthPolicy")]

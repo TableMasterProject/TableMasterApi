@@ -291,6 +291,60 @@ namespace TableMasterApi.DAL
             }
         }
 
+        public async Task<bool> SavePasswordResetToken(long userId, string hashedToken, DateTime expiry)
+        {
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            {
+                await connection.OpenAsync();
+
+                var query = @"INSERT INTO ""UserPasswordResetTokens"" (""UserId"", ""TokenHash"", ""ExpiryDate"") 
+                     VALUES (@UserId, @TokenHash, @ExpiryDate)";
+
+                var rowsAffected = await connection.ExecuteAsync(query, new { UserId = userId, TokenHash = hashedToken, ExpiryDate = expiry });
+                return rowsAffected > 0;
+            }
+        }
+
+        public async Task<long?> GetUserIdByPasswordResetToken(string hashedToken)
+        {
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            {
+                await connection.OpenAsync();
+
+                var query = @"SELECT ""UserId"" FROM ""UserPasswordResetTokens""
+                     WHERE ""TokenHash"" = @TokenHash
+                       AND ""ExpiryDate"" > CURRENT_TIMESTAMP
+                       AND ""UsedAt"" IS NULL";
+
+                return await connection.QuerySingleOrDefaultAsync<long?>(query, new { TokenHash = hashedToken });
+            }
+        }
+
+        public async Task<bool> DeletePasswordResetTokensForUser(long userId)
+        {
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            {
+                await connection.OpenAsync();
+
+                var query = @"DELETE FROM ""UserPasswordResetTokens"" WHERE ""UserId"" = @UserId";
+
+                var rowsAffected = await connection.ExecuteAsync(query, new { UserId = userId });
+                return rowsAffected > 0;
+            }
+        }
+
+        public async Task<bool> DeleteExpiredPasswordResetTokens()
+        {
+            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            {
+                await connection.OpenAsync();
+
+                var query = @"DELETE FROM ""UserPasswordResetTokens"" WHERE ""ExpiryDate"" <= CURRENT_TIMESTAMP OR ""UsedAt"" IS NOT NULL";
+
+                var rowsAffected = await connection.ExecuteAsync(query);
+                return rowsAffected > 0;
+            }
+        }
 
     }
 }

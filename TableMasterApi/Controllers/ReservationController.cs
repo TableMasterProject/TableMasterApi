@@ -24,10 +24,19 @@ namespace TableMasterApi.Controllers
 
         private readonly JwtService _jwtService;
         private readonly FcmService _fcmService;
+        private readonly IEmailNotificationService _emailNotificationService;
 
         private readonly IHubContext<ReservationHub> _hubContext;
 
-        public ReservationController(IReservationDAL reservationDAL, IRestaurantDAL restaurantDAL, ITableDAL tableDAL, IDeviceTokenDAL deviceTokenDAL, JwtService jwtService, IHubContext<ReservationHub> hubContext, FcmService fcmService)
+        public ReservationController(
+            IReservationDAL reservationDAL,
+            IRestaurantDAL restaurantDAL,
+            ITableDAL tableDAL,
+            IDeviceTokenDAL deviceTokenDAL,
+            JwtService jwtService,
+            IHubContext<ReservationHub> hubContext,
+            FcmService fcmService,
+            IEmailNotificationService? emailNotificationService = null)
         {
             _jwtService = jwtService;
             _reservationDAL = reservationDAL;
@@ -35,6 +44,7 @@ namespace TableMasterApi.Controllers
             _tableDAL = tableDAL;
             _deviceTokenDAL = deviceTokenDAL;
             _fcmService = fcmService;
+            _emailNotificationService = emailNotificationService ?? NullEmailNotificationService.Instance;
             _hubContext = hubContext;
         }
 
@@ -134,6 +144,40 @@ namespace TableMasterApi.Controllers
         }
 
         [Authorize]
+        [HttpGet("{id:long}")]
+        public async Task<ActionResult<ReservationOut>> GetReservationById(long id)
+        {
+            try
+            {
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
+                var reservation = await _reservationDAL.GetMyReservationById(id);
+                if (reservation == null)
+                    return NotFound("Aucune réservation trouvée.");
+
+                if (reservation.UserId == idUserToken)
+                    return Ok(reservation);
+
+                if (reservation.RestaurantId == null)
+                    return Unauthorized();
+
+                var restaurant = await _restaurantDAL.GetRestaurantById(reservation.RestaurantId.Value);
+                if (restaurant == null)
+                    return NotFound("Aucune Restaurant trouvée.");
+
+                if (restaurant.UserId != idUserToken)
+                    return Unauthorized();
+
+                return Ok(reservation);
+            }
+            catch (Exception e)
+            {
+                return StatusCode(500, e.Message);
+            }
+        }
+
+        [Authorize]
         [HttpPost]
         public async Task<ActionResult<ReservationOut>> CreateReservation([FromBody] ReservationIn reservation)
         {
@@ -190,6 +234,8 @@ namespace TableMasterApi.Controllers
                     "Réservation enregistrée",
                     $"Votre réservation du {created.ReservationDate:dd/MM/yyyy HH:mm} a été créée.",
                     new { type = "reservation_created", reservationId = created.Id });
+
+                await _emailNotificationService.SendReservationCreatedAsync(created, restaurant);
 
                 if (reservation.Status == ReservationStatus.Validee)
                 {
@@ -346,6 +392,11 @@ namespace TableMasterApi.Controllers
                         new { type = "reservation_status_updated", reservationId = id, status = reservationStatus.ToString() });
                 }
 
+                if (resultes != null)
+                {
+                    await _emailNotificationService.SendReservationStatusUpdatedAsync(resultes, Restaurant, reservationStatus);
+                }
+
                 return Ok(resultes);
             }
             catch (Exception e)
@@ -399,6 +450,8 @@ namespace TableMasterApi.Controllers
                         $"Votre réservation du {deleted.ReservationDate:dd/MM/yyyy HH:mm} a été annulée.",
                         new { type = "reservation_cancelled", reservationId = id });
                 }
+
+                await _emailNotificationService.SendReservationCancelledAsync(deleted, restaurant);
 
                 return Ok(deleted != null);
             }

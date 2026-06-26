@@ -64,6 +64,38 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task GetReservationById_ShouldReturnOk_WhenCurrentUserOwnsReservation()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var controller = CreateController(reservationDal: reservationDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 12);
+            var reservation = TestData.ReservationOut(id: 7, userId: 12);
+
+            reservationDal.Setup(x => x.GetMyReservationById(7)).ReturnsAsync(reservation);
+
+            var result = await controller.GetReservationById(7);
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            ok.Value.Should().BeEquivalentTo(reservation);
+        }
+
+        [Fact]
+        public async Task GetReservationById_ShouldReturnUnauthorized_WhenCurrentUserCannotAccessReservation()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(reservationDal: reservationDal, restaurantDal: restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 12);
+
+            reservationDal.Setup(x => x.GetMyReservationById(7)).ReturnsAsync(TestData.ReservationOut(id: 7, userId: 77));
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(userId: 99));
+
+            var result = await controller.GetReservationById(7);
+
+            result.Result.Should().BeOfType<UnauthorizedResult>();
+        }
+
+        [Fact]
         public async Task CreateReservation_ShouldReturnBadRequest_WhenTableBelongsToAnotherRestaurant()
         {
             var tableDal = new Mock<ITableDAL>();
@@ -184,14 +216,16 @@ namespace TableMasterApi.Tests.Controllers
             var tableDal = new Mock<ITableDAL>();
             var restaurantDal = new Mock<IRestaurantDAL>();
             var hub = ExternalServiceTestHelper.CreateReservationHub();
-            var controller = CreateController(reservationDal, tableDal, restaurantDal, hubDouble: hub);
+            var emailNotificationService = new Mock<IEmailNotificationService>();
+            var controller = CreateController(reservationDal, tableDal, restaurantDal, hubDouble: hub, emailNotificationService: emailNotificationService);
             ControllerTestHelper.SetBearerToken(controller, _jwtService, 12);
             var input = TestData.ReservationIn();
             var created = TestData.ReservationOut(userId: 12);
+            var restaurant = TestData.RestaurantOut(userId: 99);
 
             tableDal.Setup(x => x.GetTablesById(4)).ReturnsAsync(TestData.TableOut());
             reservationDal.Setup(x => x.GetReservations(It.IsAny<SearchReservations>())).ReturnsAsync([]);
-            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(userId: 99));
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(restaurant);
             reservationDal.Setup(x => x.CreateReservationAsync(input)).ReturnsAsync(created);
 
             var result = await controller.CreateReservation(input);
@@ -204,6 +238,7 @@ namespace TableMasterApi.Tests.Controllers
             hub.ClientProxy.Verify(
                 x => x.SendCoreAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, It.IsAny<object?[]>(), It.IsAny<CancellationToken>()),
                 Times.Exactly(2));
+            emailNotificationService.Verify(x => x.SendReservationCreatedAsync(created, restaurant, It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Fact]
@@ -403,14 +438,16 @@ namespace TableMasterApi.Tests.Controllers
             var reservationDal = new Mock<IReservationDAL>();
             var restaurantDal = new Mock<IRestaurantDAL>();
             var hub = ExternalServiceTestHelper.CreateReservationHub();
-            var controller = CreateController(reservationDal: reservationDal, restaurantDal: restaurantDal, hubDouble: hub);
+            var emailNotificationService = new Mock<IEmailNotificationService>();
+            var controller = CreateController(reservationDal: reservationDal, restaurantDal: restaurantDal, hubDouble: hub, emailNotificationService: emailNotificationService);
             ControllerTestHelper.SetBearerToken(controller, _jwtService, 99);
             var existing = TestData.ReservationOut(id: 1, userId: 12);
             var updated = TestData.ReservationOut(id: 1, userId: 12);
             updated.Status = ReservationStatus.Validee;
+            var restaurant = TestData.RestaurantOut(userId: 99);
 
             reservationDal.Setup(x => x.GetMyReservationById(1)).ReturnsAsync(existing);
-            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(userId: 99));
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(restaurant);
             reservationDal.Setup(x => x.UpdateReservationStatus(1, ReservationStatus.Validee)).ReturnsAsync(updated);
 
             var result = await controller.UpdateReservationStatus(1, ReservationStatus.Validee);
@@ -420,6 +457,7 @@ namespace TableMasterApi.Tests.Controllers
             hub.ClientProxy.Verify(
                 x => x.SendCoreAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, It.IsAny<object?[]>(), It.IsAny<CancellationToken>()),
                 Times.Exactly(2));
+            emailNotificationService.Verify(x => x.SendReservationStatusUpdatedAsync(updated, restaurant, ReservationStatus.Validee, It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Fact]
@@ -442,12 +480,14 @@ namespace TableMasterApi.Tests.Controllers
             var reservationDal = new Mock<IReservationDAL>();
             var restaurantDal = new Mock<IRestaurantDAL>();
             var hub = ExternalServiceTestHelper.CreateReservationHub();
-            var controller = CreateController(reservationDal: reservationDal, restaurantDal: restaurantDal, hubDouble: hub);
+            var emailNotificationService = new Mock<IEmailNotificationService>();
+            var controller = CreateController(reservationDal: reservationDal, restaurantDal: restaurantDal, hubDouble: hub, emailNotificationService: emailNotificationService);
             ControllerTestHelper.SetBearerToken(controller, _jwtService, 12);
             var deleted = TestData.ReservationOut(id: 1, userId: 12);
+            var restaurant = TestData.RestaurantOut(userId: 99);
 
             reservationDal.Setup(x => x.Delete(1)).ReturnsAsync(deleted);
-            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(userId: 99));
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(restaurant);
 
             var result = await controller.Delete(1);
 
@@ -456,6 +496,7 @@ namespace TableMasterApi.Tests.Controllers
             hub.ClientProxy.Verify(
                 x => x.SendCoreAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, It.IsAny<object?[]>(), It.IsAny<CancellationToken>()),
                 Times.Exactly(2));
+            emailNotificationService.Verify(x => x.SendReservationCancelledAsync(deleted, restaurant, It.IsAny<CancellationToken>()), Times.Once);
         }
 
         private ReservationController CreateController(
@@ -463,7 +504,8 @@ namespace TableMasterApi.Tests.Controllers
             Mock<ITableDAL>? tableDal = null,
             Mock<IRestaurantDAL>? restaurantDal = null,
             Mock<IDeviceTokenDAL>? deviceTokenDal = null,
-            ReservationHubTestDouble? hubDouble = null)
+            ReservationHubTestDouble? hubDouble = null,
+            Mock<IEmailNotificationService>? emailNotificationService = null)
         {
             hubDouble ??= ExternalServiceTestHelper.CreateReservationHub();
             deviceTokenDal ??= new Mock<IDeviceTokenDAL>();
@@ -478,7 +520,8 @@ namespace TableMasterApi.Tests.Controllers
                 deviceTokenDal.Object,
                 _jwtService,
                 hubDouble.HubContext.Object,
-                fcmService);
+                fcmService,
+                emailNotificationService?.Object);
         }
     }
 }

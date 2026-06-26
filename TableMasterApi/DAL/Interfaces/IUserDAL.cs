@@ -19,5 +19,9 @@ namespace TableMasterApi.DAL.Interfaces
         Task<long?> GetUserIdByRefreshToken(string hashedToken);
         Task<bool> DeleteRefreshToken(string hashedToken);
         Task<bool> DeleteAllRefreshTokensForUser(long userId);
+        Task<bool> SavePasswordResetToken(long userId, string hashedToken, DateTime expiry);
+        Task<long?> GetUserIdByPasswordResetToken(string hashedToken);
+        Task<bool> DeletePasswordResetTokensForUser(long userId);
+        Task<bool> DeleteExpiredPasswordResetTokens();
     }
 }
