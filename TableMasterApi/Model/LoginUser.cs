@@ -9,6 +9,11 @@
     {
         public required string RefreshToken { get; set; }
     }
+
+    public class LogoutRequest
+    {
+        public string RefreshToken { get; set; } = string.Empty;
+    }
     public class LoginUserOut
     {
         public required string AccessToken { get; set; }

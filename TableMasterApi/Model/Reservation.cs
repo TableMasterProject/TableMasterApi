@@ -40,4 +40,10 @@
         public RestaurantOut? Restaurant { get; set; }
     }
 
+    public class ReservationAvailabilityOut
+    {
+        public long TableId { get; set; }
+        public DateTime ReservationDate { get; set; }
+    }
+
 }

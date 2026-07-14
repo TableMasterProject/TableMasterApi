@@ -48,6 +48,21 @@ namespace TableMasterApi.Controllers
                 if (input == null)
                     return BadRequest();
 
+                if (string.IsNullOrWhiteSpace(input.Category) ||
+                    string.IsNullOrWhiteSpace(input.ItemName) ||
+                    input.Price < 0)
+                {
+                    return BadRequest("La catégorie, le nom et un prix positif ou nul sont obligatoires.");
+                }
+
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+                var restaurant = await _restaurantDAL.GetRestaurantById(input.RestaurantId);
+                if (restaurant == null)
+                    return NotFound("Le restaurant n'existe pas");
+                if (restaurant.UserId != idUserToken)
+                    return Forbid();
+
                 var result = await _dal.InsertAsync(input);
                 return Ok(result);
             }

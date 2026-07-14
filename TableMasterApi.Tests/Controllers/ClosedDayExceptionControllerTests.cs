@@ -45,16 +45,37 @@ namespace TableMasterApi.Tests.Controllers
         public async Task Post_ShouldReturnOk_WhenInputIsValid()
         {
             var dal = new Mock<IClosedDayExceptionDAL>();
-            var controller = CreateController(dal);
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(dal, restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
             var input = TestData.ClosedDayExceptionIn();
             var created = TestData.ClosedDayExceptionOut();
 
+            restaurantDal.Setup(x => x.GetRestaurantById(input.RestaurantId)).ReturnsAsync(TestData.RestaurantOut(userId: 42));
             dal.Setup(x => x.InsertAsync(input)).ReturnsAsync(created);
 
             var result = await controller.Post(input);
 
             var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
             ok.Value.Should().BeEquivalentTo(created);
+        }
+
+        [Fact]
+        public async Task Post_ShouldReturnForbidden_WhenRestaurantBelongsToAnotherUser()
+        {
+            var dal = new Mock<IClosedDayExceptionDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(dal, restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+            var input = TestData.ClosedDayExceptionIn();
+
+            restaurantDal.Setup(x => x.GetRestaurantById(input.RestaurantId))
+                .ReturnsAsync(TestData.RestaurantOut(userId: 99));
+
+            var result = await controller.Post(input);
+
+            result.Result.Should().BeOfType<ForbidResult>();
+            dal.Verify(x => x.InsertAsync(It.IsAny<ClosedDayExceptionIn>()), Times.Never);
         }
 
         [Fact]

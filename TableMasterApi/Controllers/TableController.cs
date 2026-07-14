@@ -35,10 +35,6 @@ namespace TableMasterApi.Controllers
                 var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-                if (Id == null)
-                {
-                    return BadRequest();
-                }
                 var tables = await _tableDAL.GetTablesByRestaurantAsync(Id);
 
                 if (tables == null)

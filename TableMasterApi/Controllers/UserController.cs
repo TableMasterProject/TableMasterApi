@@ -29,6 +29,13 @@ namespace TableMasterApi.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<UserOut>> GetUserById(long id)
         {
+            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers.Authorization);
+            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            if (id != idUserToken)
+            {
+                return Forbid();
+            }
+
             var user = await _userDAL.GetUserById(id);
             if (user == null)
             {

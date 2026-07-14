@@ -29,7 +29,7 @@ namespace TableMasterApi.Controllers
                 var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-                if (Id == null || searchReviews == null)
+                if (searchReviews == null)
                 {
                     return BadRequest();
                 }

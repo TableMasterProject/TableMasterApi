@@ -154,5 +154,19 @@ namespace TableMasterApi.Controllers
                 RefreshToken = newRefreshToken
             });
         }
+
+        [Microsoft.AspNetCore.Authorization.Authorize]
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout([FromBody] LogoutRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            {
+                return BadRequest("Le refresh token est obligatoire.");
+            }
+
+            var hashedToken = _jwtService.HashToken(request.RefreshToken);
+            await _userDAL.DeleteRefreshToken(hashedToken);
+            return NoContent();
+        }
     }
 }

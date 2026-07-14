@@ -19,17 +19,60 @@ namespace TableMasterApi.Tests.Controllers
         public async Task GetReservations_ShouldReturnOk_WhenReservationsExist()
         {
             var reservationDal = new Mock<IReservationDAL>();
-            var controller = CreateController(reservationDal: reservationDal);
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(reservationDal: reservationDal, restaurantDal: restaurantDal);
             ControllerTestHelper.SetBearerToken(controller, _jwtService, 12);
-            var search = new SearchReservations();
+            var search = new SearchReservations { restaurantId = 10 };
             var reservations = new[] { TestData.ReservationOut() };
 
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(userId: 12));
             reservationDal.Setup(x => x.GetReservations(search)).ReturnsAsync(reservations);
 
             var result = await controller.GetReservations(search);
 
             var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
             ok.Value.Should().BeEquivalentTo(reservations);
+        }
+
+        [Fact]
+        public async Task GetReservations_ShouldReturnForbidden_WhenRestaurantBelongsToAnotherUser()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(reservationDal: reservationDal, restaurantDal: restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 12);
+            var search = new SearchReservations { restaurantId = 10 };
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(userId: 99));
+
+            var result = await controller.GetReservations(search);
+
+            result.Result.Should().BeOfType<ForbidResult>();
+            reservationDal.Verify(x => x.GetReservations(It.IsAny<SearchReservations>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task GetAvailability_ShouldReturnOnlyOccupiedSlots()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(reservationDal: reservationDal, restaurantDal: restaurantDal);
+            var search = new SearchReservations
+            {
+                restaurantId = 10,
+                minDate = new DateOnly(2026, 7, 20),
+                maxDate = new DateOnly(2026, 7, 20)
+            };
+            var slots = new[]
+            {
+                new ReservationAvailabilityOut { TableId = 4, ReservationDate = new DateTime(2026, 7, 20, 20, 0, 0) }
+            };
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut());
+            reservationDal.Setup(x => x.GetAvailability(search)).ReturnsAsync(slots);
+
+            var result = await controller.GetAvailability(search);
+
+            var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+            ok.Value.Should().BeEquivalentTo(slots);
         }
 
         [Fact]
@@ -41,7 +84,7 @@ namespace TableMasterApi.Tests.Controllers
 
             var result = await controller.GetReservations(null!);
 
-            result.Result.Should().BeOfType<BadRequestResult>();
+            result.Result.Should().BeOfType<BadRequestObjectResult>();
             reservationDal.Verify(x => x.GetReservations(It.IsAny<SearchReservations>()), Times.Never);
         }
 
@@ -80,7 +123,7 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
-        public async Task GetReservationById_ShouldReturnUnauthorized_WhenCurrentUserCannotAccessReservation()
+        public async Task GetReservationById_ShouldReturnForbidden_WhenCurrentUserCannotAccessReservation()
         {
             var reservationDal = new Mock<IReservationDAL>();
             var restaurantDal = new Mock<IRestaurantDAL>();
@@ -92,7 +135,7 @@ namespace TableMasterApi.Tests.Controllers
 
             var result = await controller.GetReservationById(7);
 
-            result.Result.Should().BeOfType<UnauthorizedResult>();
+            result.Result.Should().BeOfType<ForbidResult>();
         }
 
         [Fact]
@@ -135,6 +178,67 @@ namespace TableMasterApi.Tests.Controllers
             });
 
             result.Result.Should().BeOfType<BadRequestObjectResult>();
+        }
+
+        [Fact]
+        public async Task CreateReservation_ShouldReturnBadRequest_WhenNumberOfPeopleIsNotPositive()
+        {
+            var tableDal = new Mock<ITableDAL>();
+            var controller = CreateController(tableDal: tableDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService.GenerateAccessToken(12));
+
+            var result = await controller.CreateReservation(new ReservationIn
+            {
+                TableId = 4,
+                RestaurantId = 10,
+                ReservationDate = DateTime.UtcNow.AddDays(1),
+                NumberOfPeople = 0
+            });
+
+            result.Result.Should().BeOfType<BadRequestObjectResult>();
+            tableDal.Verify(x => x.GetTablesById(It.IsAny<long>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task CreateReservation_ShouldReturnConflict_WhenRestaurantIsClosed()
+        {
+            var tableDal = new Mock<ITableDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var reservationDal = new Mock<IReservationDAL>();
+            var closedDayDal = new Mock<IClosedDayExceptionDAL>();
+            var controller = CreateController(
+                reservationDal: reservationDal,
+                tableDal: tableDal,
+                restaurantDal: restaurantDal,
+                closedDayExceptionDal: closedDayDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 12);
+            var reservationDate = new DateTime(2026, 7, 20, 20, 0, 0);
+            var input = new ReservationIn
+            {
+                TableId = 4,
+                RestaurantId = 10,
+                ReservationDate = reservationDate,
+                NumberOfPeople = 2
+            };
+            tableDal.Setup(x => x.GetTablesById(4)).ReturnsAsync(
+                new TableEntityOut { Id = 4, RestaurantId = 10, TableNumber = 1, NumberOfSeats = 4 });
+            reservationDal.Setup(x => x.GetReservations(It.IsAny<SearchReservations>())).ReturnsAsync([]);
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut());
+            closedDayDal.Setup(x => x.GetByRestaurantAsync(10)).ReturnsAsync([
+                new ClosedDayExceptionOut
+                {
+                    Id = 1,
+                    RestaurantId = 10,
+                    ExceptionDateBegin = reservationDate.Date,
+                    ExceptionDateEnd = reservationDate.Date,
+                    Reason = "Fermeture"
+                }
+            ]);
+
+            var result = await controller.CreateReservation(input);
+
+            result.Result.Should().BeOfType<ConflictObjectResult>();
+            reservationDal.Verify(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()), Times.Never);
         }
 
         [Fact]
@@ -269,6 +373,41 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task CreateReservation_ShouldIgnoreClientProvidedValidatedStatus_WhenAutoValidationIsDisabled()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var tableDal = new Mock<ITableDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(reservationDal, tableDal, restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService.GenerateAccessToken(12));
+
+            tableDal.Setup(x => x.GetTablesById(4)).ReturnsAsync(
+                new TableEntityOut { Id = 4, RestaurantId = 10, TableNumber = 1, NumberOfSeats = 4 });
+            reservationDal.Setup(x => x.GetReservations(It.IsAny<SearchReservations>())).ReturnsAsync([]);
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(autoValidate: false));
+            reservationDal.Setup(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()))
+                .ReturnsAsync((ReservationIn input) =>
+                {
+                    var output = TestData.ReservationOut();
+                    output.Status = input.Status;
+                    return output;
+                });
+
+            var result = await controller.CreateReservation(new ReservationIn
+            {
+                TableId = 4,
+                RestaurantId = 10,
+                ReservationDate = DateTime.UtcNow.AddDays(1),
+                NumberOfPeople = 2,
+                Status = ReservationStatus.Validee
+            });
+
+            result.Result.Should().BeOfType<OkObjectResult>();
+            reservationDal.Verify(x => x.CreateReservationAsync(
+                It.Is<ReservationIn>(input => input.Status == ReservationStatus.EnAttente)), Times.Once);
+        }
+
+        [Fact]
         public async Task CreateQuickReservation_ShouldReturnOkAndSendRestaurantMessage_WhenReservationIsValid()
         {
             var reservationDal = new Mock<IReservationDAL>();
@@ -309,7 +448,7 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
-        public async Task CreateQuickReservation_ShouldReturnUnauthorized_WhenCurrentUserDoesNotOwnRestaurant()
+        public async Task CreateQuickReservation_ShouldReturnForbidden_WhenCurrentUserDoesNotOwnRestaurant()
         {
             var reservationDal = new Mock<IReservationDAL>();
             var tableDal = new Mock<ITableDAL>();
@@ -321,7 +460,7 @@ namespace TableMasterApi.Tests.Controllers
 
             var result = await controller.CreateQuickReservation(10, TestData.QuickReservationIn());
 
-            result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+            result.Result.Should().BeOfType<ForbidResult>();
             tableDal.Verify(x => x.GetTablesById(It.IsAny<long>()), Times.Never);
             reservationDal.Verify(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()), Times.Never);
         }
@@ -428,7 +567,7 @@ namespace TableMasterApi.Tests.Controllers
 
             var result = await controller.UpdateReservationStatus(1, ReservationStatus.Validee);
 
-            result.Result.Should().BeOfType<UnauthorizedResult>();
+            result.Result.Should().BeOfType<ForbidResult>();
             reservationDal.Verify(x => x.UpdateReservationStatus(It.IsAny<long>(), It.IsAny<ReservationStatus>()), Times.Never);
         }
 
@@ -461,13 +600,31 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task UpdateReservationStatus_ShouldReturnConflict_WhenTransitionIsInvalid()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(reservationDal: reservationDal, restaurantDal: restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 99);
+            var existing = TestData.ReservationOut(id: 1, userId: 12);
+            existing.Status = ReservationStatus.EnAttente;
+            reservationDal.Setup(x => x.GetMyReservationById(1)).ReturnsAsync(existing);
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(userId: 99));
+
+            var result = await controller.UpdateReservationStatus(1, ReservationStatus.Finie);
+
+            result.Result.Should().BeOfType<ConflictObjectResult>();
+            reservationDal.Verify(x => x.UpdateReservationStatus(It.IsAny<long>(), It.IsAny<ReservationStatus>()), Times.Never);
+        }
+
+        [Fact]
         public async Task Delete_ShouldReturnNotFound_WhenReservationDoesNotExist()
         {
             var reservationDal = new Mock<IReservationDAL>();
             var controller = CreateController(reservationDal: reservationDal);
             ControllerTestHelper.SetBearerToken(controller, _jwtService, 12);
 
-            reservationDal.Setup(x => x.Delete(1)).ReturnsAsync((ReservationOut?)null);
+            reservationDal.Setup(x => x.GetMyReservationById(1)).ReturnsAsync((ReservationOut?)null);
 
             var result = await controller.Delete(1);
 
@@ -486,6 +643,7 @@ namespace TableMasterApi.Tests.Controllers
             var deleted = TestData.ReservationOut(id: 1, userId: 12);
             var restaurant = TestData.RestaurantOut(userId: 99);
 
+            reservationDal.Setup(x => x.GetMyReservationById(1)).ReturnsAsync(deleted);
             reservationDal.Setup(x => x.Delete(1)).ReturnsAsync(deleted);
             restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(restaurant);
 
@@ -499,13 +657,29 @@ namespace TableMasterApi.Tests.Controllers
             emailNotificationService.Verify(x => x.SendReservationCancelledAsync(deleted, restaurant, It.IsAny<CancellationToken>()), Times.Once);
         }
 
+        [Fact]
+        public async Task Delete_ShouldReturnForbidden_WhenReservationBelongsToAnotherUser()
+        {
+            var reservationDal = new Mock<IReservationDAL>();
+            var controller = CreateController(reservationDal: reservationDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 12);
+            reservationDal.Setup(x => x.GetMyReservationById(1))
+                .ReturnsAsync(TestData.ReservationOut(id: 1, userId: 77));
+
+            var result = await controller.Delete(1);
+
+            result.Result.Should().BeOfType<ForbidResult>();
+            reservationDal.Verify(x => x.Delete(It.IsAny<long>()), Times.Never);
+        }
+
         private ReservationController CreateController(
             Mock<IReservationDAL>? reservationDal = null,
             Mock<ITableDAL>? tableDal = null,
             Mock<IRestaurantDAL>? restaurantDal = null,
             Mock<IDeviceTokenDAL>? deviceTokenDal = null,
             ReservationHubTestDouble? hubDouble = null,
-            Mock<IEmailNotificationService>? emailNotificationService = null)
+            Mock<IEmailNotificationService>? emailNotificationService = null,
+            Mock<IClosedDayExceptionDAL>? closedDayExceptionDal = null)
         {
             hubDouble ??= ExternalServiceTestHelper.CreateReservationHub();
             deviceTokenDal ??= new Mock<IDeviceTokenDAL>();
@@ -521,7 +695,8 @@ namespace TableMasterApi.Tests.Controllers
                 _jwtService,
                 hubDouble.HubContext.Object,
                 fcmService,
-                emailNotificationService?.Object);
+                emailNotificationService?.Object,
+                closedDayExceptionDal?.Object);
         }
     }
 }

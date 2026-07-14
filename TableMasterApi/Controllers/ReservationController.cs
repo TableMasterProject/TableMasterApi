@@ -21,6 +21,7 @@ namespace TableMasterApi.Controllers
         private readonly IRestaurantDAL _restaurantDAL;
         private readonly ITableDAL _tableDAL;
         private readonly IDeviceTokenDAL _deviceTokenDAL;
+        private readonly IClosedDayExceptionDAL? _closedDayExceptionDAL;
 
         private readonly JwtService _jwtService;
         private readonly FcmService _fcmService;
@@ -36,7 +37,8 @@ namespace TableMasterApi.Controllers
             JwtService jwtService,
             IHubContext<ReservationHub> hubContext,
             FcmService fcmService,
-            IEmailNotificationService? emailNotificationService = null)
+            IEmailNotificationService? emailNotificationService = null,
+            IClosedDayExceptionDAL? closedDayExceptionDAL = null)
         {
             _jwtService = jwtService;
             _reservationDAL = reservationDAL;
@@ -46,6 +48,7 @@ namespace TableMasterApi.Controllers
             _fcmService = fcmService;
             _emailNotificationService = emailNotificationService ?? NullEmailNotificationService.Instance;
             _hubContext = hubContext;
+            _closedDayExceptionDAL = closedDayExceptionDAL;
         }
 
         private async Task SendPushNotificationToUsers(IEnumerable<long> userIds, string title, string body, object? data = null)
@@ -97,10 +100,16 @@ namespace TableMasterApi.Controllers
                 var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-                if (searchReservations == null)
-                {
-                    return BadRequest();
-                }
+                if (searchReservations == null || searchReservations.restaurantId == null)
+                    return BadRequest("Le restaurant est obligatoire.");
+
+                var restaurant = await _restaurantDAL.GetRestaurantById(searchReservations.restaurantId.Value);
+                if (restaurant == null)
+                    return NotFound("Restaurant introuvable.");
+
+                if (restaurant.UserId != idUserToken)
+                    return Forbid();
+
                 var resultes = await _reservationDAL.GetReservations(searchReservations);
 
                 if (resultes == null)
@@ -113,6 +122,24 @@ namespace TableMasterApi.Controllers
                 return StatusCode(500, e.Message);
             }
 
+        }
+
+        [Authorize]
+        [HttpGet("availability")]
+        public async Task<ActionResult<IEnumerable<ReservationAvailabilityOut>>> GetAvailability([FromQuery] SearchReservations searchReservations)
+        {
+            if (searchReservations.restaurantId == null)
+                return BadRequest("Le restaurant est obligatoire.");
+
+            if (searchReservations.minDate == null || searchReservations.maxDate == null)
+                return BadRequest("Une plage de dates est obligatoire.");
+
+            var restaurant = await _restaurantDAL.GetRestaurantById(searchReservations.restaurantId.Value);
+            if (restaurant == null)
+                return NotFound("Restaurant introuvable.");
+
+            var availability = await _reservationDAL.GetAvailability(searchReservations);
+            return Ok(availability);
         }
         
         [Authorize]
@@ -167,7 +194,7 @@ namespace TableMasterApi.Controllers
                     return NotFound("Aucune Restaurant trouvée.");
 
                 if (restaurant.UserId != idUserToken)
-                    return Unauthorized();
+                    return Forbid();
 
                 return Ok(reservation);
             }
@@ -192,6 +219,9 @@ namespace TableMasterApi.Controllers
                 if (reservation.TableId == null || reservation.RestaurantId == null)
                     return BadRequest("La table et le restaurant sont obligatoires.");
 
+                if (reservation.NumberOfPeople <= 0)
+                    return BadRequest("Le nombre de personnes doit être supérieur à zéro.");
+
                 var table = await _tableDAL.GetTablesById(reservation.TableId.Value);
                 if (table == null)
                     return NotFound("La table n'existe pas.");
@@ -210,11 +240,22 @@ namespace TableMasterApi.Controllers
                 if (restaurant == null)
                     return NotFound("Aucune Restaurant trouvée.");
 
-                reservation.UserId = idUserToken;
-                if (restaurant.IsAutoValidateReservation)
+                if (_closedDayExceptionDAL != null)
                 {
-                    reservation.Status = ReservationStatus.Validee;
+                    var closedDays = await _closedDayExceptionDAL.GetByRestaurantAsync(reservation.RestaurantId.Value);
+                    var requestedDay = reservation.ReservationDate.Date;
+                    if (closedDays.Any(closedDay =>
+                        requestedDay >= closedDay.ExceptionDateBegin.Date &&
+                        requestedDay <= closedDay.ExceptionDateEnd.Date))
+                    {
+                        return Conflict("Le restaurant est fermé à cette date.");
+                    }
                 }
+
+                reservation.UserId = idUserToken;
+                reservation.Status = restaurant.IsAutoValidateReservation
+                    ? ReservationStatus.Validee
+                    : ReservationStatus.EnAttente;
                 var created = await _reservationDAL.CreateReservationAsync(reservation);
 
                 // Envoi en temps réel via SignalR
@@ -259,6 +300,10 @@ namespace TableMasterApi.Controllers
 
                 return Ok(created);
             }
+            catch (ReservationConflictException e)
+            {
+                return Conflict(e.Message);
+            }
             catch (Exception e)
             {
                 return StatusCode(500, e.Message);
@@ -293,7 +338,19 @@ namespace TableMasterApi.Controllers
                     return NotFound("Le restaurant n'existe pas.");
 
                 if (restaurant.UserId != idUserToken)
-                    return Unauthorized("Vous n'êtes pas autorisé à créer une réservation pour ce restaurant.");
+                    return Forbid();
+
+                if (_closedDayExceptionDAL != null)
+                {
+                    var closedDays = await _closedDayExceptionDAL.GetByRestaurantAsync(restaurantId);
+                    var requestedDay = reservation.ReservationDate.Date;
+                    if (closedDays.Any(closedDay =>
+                        requestedDay >= closedDay.ExceptionDateBegin.Date &&
+                        requestedDay <= closedDay.ExceptionDateEnd.Date))
+                    {
+                        return Conflict("Le restaurant est fermé à cette date.");
+                    }
+                }
 
                 var table = await _tableDAL.GetTablesById(reservation.TableId);
                 if (table == null)
@@ -333,6 +390,10 @@ namespace TableMasterApi.Controllers
 
                 return Ok(created);
             }
+            catch (ReservationConflictException e)
+            {
+                return Conflict(e.Message);
+            }
             catch (Exception e)
             {
                 return StatusCode(500, e.Message);
@@ -348,10 +409,6 @@ namespace TableMasterApi.Controllers
                 var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
 
-                if (id == null)
-                {
-                    return BadRequest();
-                }
                 var Reservation = await _reservationDAL.GetMyReservationById(id);
                 if (Reservation == null)
                     return NotFound("Aucune réservation trouvée.");
@@ -364,8 +421,20 @@ namespace TableMasterApi.Controllers
                     return NotFound("Aucune Restaurant trouvée.");
                 if (Restaurant.UserId != idUserToken && Reservation.UserId != idUserToken)
                 {
-                    return Unauthorized();
+                    return Forbid();
                 }
+
+                var isRestaurantOwner = Restaurant.UserId == idUserToken;
+                var transitionAllowed = isRestaurantOwner
+                    ? (Reservation.Status == ReservationStatus.EnAttente &&
+                       reservationStatus is ReservationStatus.Validee or ReservationStatus.AnnuleeParResto) ||
+                      (Reservation.Status == ReservationStatus.Validee &&
+                       reservationStatus is ReservationStatus.Finie or ReservationStatus.AnnuleeParResto)
+                    : Reservation.Status == ReservationStatus.Validee &&
+                      reservationStatus == ReservationStatus.AnnuleeParClient;
+
+                if (!transitionAllowed)
+                    return Conflict("Cette transition de statut n'est pas autorisée.");
 
                 var resultes = await _reservationDAL.UpdateReservationStatus(id, reservationStatus);
 
@@ -399,6 +468,10 @@ namespace TableMasterApi.Controllers
 
                 return Ok(resultes);
             }
+            catch (ReservationConflictException e)
+            {
+                return Conflict(e.Message);
+            }
             catch (Exception e)
             {
                 return StatusCode(500, e.Message);
@@ -414,6 +487,16 @@ namespace TableMasterApi.Controllers
             {
                 var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
                 var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+
+                var reservation = await _reservationDAL.GetMyReservationById(id);
+                if (reservation == null)
+                    return NotFound("Réservation introuvable.");
+
+                if (reservation.UserId != idUserToken)
+                    return Forbid();
+
+                if (reservation.Status != ReservationStatus.EnAttente)
+                    return Conflict("Seule une demande en attente peut être supprimée.");
 
                 var deleted = await _reservationDAL.Delete(id);
                 if (deleted == null )

@@ -344,5 +344,23 @@ namespace TableMasterApi.Tests.Controllers
             userDal.Verify(x => x.DeleteRefreshToken(It.IsAny<string>()), Times.Never);
             userDal.Verify(x => x.SaveRefreshToken(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
         }
+
+        [Fact]
+        public async Task Logout_ShouldRevokeHashedRefreshToken()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var controller = new AuthController(userDal.Object, authDal.Object, _jwtService);
+            const string refreshToken = "refresh-token-to-revoke";
+            var expectedHash = _jwtService.HashToken(refreshToken);
+
+            userDal.Setup(x => x.DeleteRefreshToken(expectedHash)).ReturnsAsync(true);
+
+            var result = await controller.Logout(new LogoutRequest { RefreshToken = refreshToken });
+
+            result.Should().BeOfType<NoContentResult>();
+            userDal.Verify(x => x.DeleteRefreshToken(expectedHash), Times.Once);
+            userDal.Verify(x => x.DeleteRefreshToken(refreshToken), Times.Never);
+        }
     }
 }

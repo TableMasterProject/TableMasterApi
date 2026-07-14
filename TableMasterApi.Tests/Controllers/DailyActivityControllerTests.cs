@@ -42,6 +42,24 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task Post_ShouldReturnForbidden_WhenRestaurantBelongsToAnotherUser()
+        {
+            var dal = new Mock<IDailyActivityDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(dal, restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+            var input = TestData.DailyActivityIn();
+
+            restaurantDal.Setup(x => x.GetRestaurantById(input.RestaurantId))
+                .ReturnsAsync(TestData.RestaurantOut(userId: 99));
+
+            var result = await controller.Post(input);
+
+            result.Should().BeOfType<ForbidResult>();
+            dal.Verify(x => x.InsertAsync(It.IsAny<DailyActivityIn>()), Times.Never);
+        }
+
+        [Fact]
         public async Task Put_ShouldReturnUnauthorized_WhenRestaurantBelongsToAnotherUser()
         {
             var dal = new Mock<IDailyActivityDAL>();

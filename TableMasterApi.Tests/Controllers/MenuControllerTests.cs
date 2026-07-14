@@ -45,16 +45,37 @@ namespace TableMasterApi.Tests.Controllers
         public async Task Post_ShouldReturnOk_WhenInputIsValid()
         {
             var menuDal = new Mock<IMenuDAL>();
-            var controller = CreateController(menuDal);
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(menuDal, restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
             var input = TestData.MenuIn();
             var created = TestData.MenuOut();
 
+            restaurantDal.Setup(x => x.GetRestaurantById(input.RestaurantId)).ReturnsAsync(TestData.RestaurantOut(userId: 42));
             menuDal.Setup(x => x.InsertAsync(input)).ReturnsAsync(created);
 
             var result = await controller.Post(input);
 
             var ok = result.Should().BeOfType<OkObjectResult>().Subject;
             ok.Value.Should().BeEquivalentTo(created);
+        }
+
+        [Fact]
+        public async Task Post_ShouldReturnForbidden_WhenRestaurantBelongsToAnotherUser()
+        {
+            var menuDal = new Mock<IMenuDAL>();
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = CreateController(menuDal, restaurantDal);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
+            var input = TestData.MenuIn();
+
+            restaurantDal.Setup(x => x.GetRestaurantById(input.RestaurantId))
+                .ReturnsAsync(TestData.RestaurantOut(userId: 99));
+
+            var result = await controller.Post(input);
+
+            result.Should().BeOfType<ForbidResult>();
+            menuDal.Verify(x => x.InsertAsync(It.IsAny<MenuIn>()), Times.Never);
         }
 
         [Fact]

@@ -3,9 +3,9 @@
     public class MenuIn
     {
         public long RestaurantId { get; set; }
-        public string Category { get; set; }
-        public string ItemName { get; set; }
-        public string Description { get; set; }
+        public string Category { get; set; } = string.Empty;
+        public string ItemName { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
         public decimal Price { get; set; }
     }
     public class MenuOut : MenuIn

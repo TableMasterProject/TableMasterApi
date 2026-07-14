@@ -23,6 +23,7 @@ namespace TableMasterApi.Tests.Controllers
             var user = TestData.UserDb(42);
             userDal.Setup(x => x.GetUserById(42)).ReturnsAsync(user);
             var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
 
             var result = await controller.GetUserById(42);
 
@@ -37,10 +38,25 @@ namespace TableMasterApi.Tests.Controllers
             var authDal = new Mock<IAuthDAL>();
             userDal.Setup(x => x.GetUserById(42)).ReturnsAsync((UserDb?)null);
             var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 42);
 
             var result = await controller.GetUserById(42);
 
             result.Result.Should().BeOfType<NotFoundResult>();
+        }
+
+        [Fact]
+        public async Task GetUserById_ShouldReturnForbidden_WhenRequestingAnotherUser()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 12);
+
+            var result = await controller.GetUserById(42);
+
+            result.Result.Should().BeOfType<ForbidResult>();
+            userDal.Verify(x => x.GetUserById(It.IsAny<long>()), Times.Never);
         }
 
         [Fact]

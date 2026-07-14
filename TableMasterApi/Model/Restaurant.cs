@@ -3,17 +3,17 @@
     public class RestaurantIn
     {
         public long UserId { get; set; }
-        public string RestaurantName { get; set; }
-        public string StreetNumber { get; set; }
-        public string StreetName { get; set; }
-        public string PostalCode { get; set; }
-        public string City { get; set; }
+        public string RestaurantName { get; set; } = string.Empty;
+        public string StreetNumber { get; set; } = string.Empty;
+        public string StreetName { get; set; } = string.Empty;
+        public string PostalCode { get; set; } = string.Empty;
+        public string City { get; set; } = string.Empty;
         public decimal? Latitude { get; set; }
         public decimal? Longitude { get; set; }
-        public string Phone { get; set; }
-        public string CuisineType { get; set; }
-        public string PaymentMethods { get; set; }
-        public string Description { get; set; }
+        public string Phone { get; set; } = string.Empty;
+        public string CuisineType { get; set; } = string.Empty;
+        public string PaymentMethods { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
         public Boolean IsAutoValidateReservation { get; set; }
     }
     public class RestaurantOut : RestaurantIn

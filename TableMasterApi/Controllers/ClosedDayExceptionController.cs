@@ -52,6 +52,14 @@ namespace TableMasterApi.Controllers
                     return BadRequest();
                 }
 
+                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
+                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+                var restaurant = await _restaurantDAL.GetRestaurantById(input.RestaurantId);
+                if (restaurant == null)
+                    return NotFound("Le restaurant n'existe pas");
+                if (restaurant.UserId != idUserToken)
+                    return Forbid();
+
                 var result = await _dal.InsertAsync(input);
                 return Ok(result);
             }
