@@ -3,7 +3,6 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -15,20 +14,17 @@ public class HealthEndpointsIntegrationTests
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment("Development");
-            builder.ConfigureAppConfiguration((_, configuration) =>
-            {
-                configuration.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:DefaultConnection"] = "Host=127.0.0.1;Port=1;Database=tablemaster;Username=test;Password=test;Timeout=1;Command Timeout=1",
-                    ["ConfigPerso:SecretKey"] = "health-endpoints-test-secret-key-32-bytes",
-                    ["ConfigPerso:Issuer"] = "TableMasterApi.Tests",
-                    ["ConfigPerso:Audience"] = "TableMasterApi.Tests",
-                    ["Features:RunMigrationsOnStartup"] = "false",
-                    ["APP_VERSION"] = "1.0.2+integration-test",
-                    ["Sentry:Dsn"] = string.Empty
-                });
-            });
+            builder.UseEnvironment("Testing");
+            builder.UseSetting(
+                "ConnectionStrings:DefaultConnection",
+                "Host=127.0.0.1;Port=1;Database=tablemaster;Username=test;Password=test;Timeout=1;Command Timeout=1");
+            builder.UseSetting("ConfigPerso:SecretKey", "health-endpoints-test-secret-key-32-bytes");
+            builder.UseSetting("ConfigPerso:Issuer", "TableMasterApi.Tests");
+            builder.UseSetting("ConfigPerso:Audience", "TableMasterApi.Tests");
+            builder.UseSetting("Cors:AllowedOrigins:0", "https://test.tablemaster.invalid");
+            builder.UseSetting("Features:RunMigrationsOnStartup", "false");
+            builder.UseSetting("APP_VERSION", "1.0.2+integration-test");
+            builder.UseSetting("Sentry:Dsn", string.Empty);
             builder.ConfigureTestServices(services =>
             {
                 services.AddHealthChecks().AddCheck(
