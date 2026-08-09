@@ -7,7 +7,7 @@ on:
     branches: [ Prod ]
 
 permissions:
-  contents: read
+  contents: write
   checks: write
   pull-requests: write
   packages: write
@@ -37,6 +37,21 @@ jobs:
           dotnet restore TableMasterApi/TableMasterApi.csproj
           dotnet restore TableMasterApi.Tests/TableMasterApi.Tests.csproj
 
+      - name: Audit vulnerable dependencies
+        run: >
+          dotnet package list
+          --project TableMasterApi/TableMasterApi.csproj
+          --vulnerable
+          --include-transitive
+
+      - name: Report outdated dependencies
+        run: >
+          dotnet package list
+          --project TableMasterApi/TableMasterApi.csproj
+          --outdated
+          --include-transitive
+          | tee dotnet-outdated.txt
+
       - name: Build
         run: |
           dotnet build TableMasterApi/TableMasterApi.csproj --no-restore --configuration Release
@@ -55,7 +70,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: '**/test-results.trx'
+          path: |
+            **/test-results.trx
+            dotnet-outdated.txt
 
       - name: Test Report
         if: always()
@@ -127,32 +144,66 @@ jobs:
 
             echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-            docker compose pull
-            docker compose up -d
-            docker image prune -f
-
-            docker compose ps
-
-            echo "Health check..."
-
-            healthy=0
-
-            for i in $(seq 1 30); do
-              if curl -fsS http://localhost:8080/health; then
-                echo ""
-                echo "API is healthy"
-                healthy=1
-                break
-              fi
-
-              echo "API not ready yet... attempt $i/30"
-              docker compose ps
-              sleep 5
-            done
-
-            if [ "$healthy" -ne 1 ]; then
-              echo "API failed to become healthy"
-              docker compose logs api --tail=200
-              exit 1
-            fi
+            chmod +x ops/*.sh
+            API_IMAGE_TAG="${{ github.sha }}" \
+            APP_VERSION="1.0.2+${{ github.run_number }}" \
+            SENTRY_RELEASE="tablemaster-api@1.0.2+${{ github.run_number }}" \
+              ./ops/deploy-api.sh
           EOF
+
+  release:
+    name: Publish API release journal
+    runs-on: ubuntu-latest
+    needs: deploy
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/Prod'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download test evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: test-results
+          path: test-results
+
+      - name: Prepare release evidence
+        run: |
+          mkdir -p release-evidence
+          TRX_FILE=$(find test-results -type f -name '*.trx' -print -quit)
+          OUTDATED_FILE=$(find test-results -type f -name 'dotnet-outdated.txt' -print -quit)
+          test -n "$TRX_FILE"
+          test -n "$OUTDATED_FILE"
+          cp "$TRX_FILE" release-evidence/test-results.trx
+          cp "$OUTDATED_FILE" release-evidence/dotnet-outdated.txt
+          sha256sum release-evidence/* CHANGELOG.md > SHA256SUMS
+
+          cat > release-notes.md << EOF
+          Release TableMaster API 1.0.2+${{ github.run_number }}
+
+          Commit: ${{ github.sha }}
+          Image immuable: ghcr.io/${{ github.repository_owner }}/tablemaster-api:${{ github.sha }}
+          Release Sentry: tablemaster-api@1.0.2+${{ github.run_number }}
+
+          Validation:
+          - build Release
+          - tests xUnit
+          - audit des dépendances vulnérables
+          - readiness PostgreSQL
+          - smoke test post-déploiement
+
+          Consulter CHANGELOG.md pour le détail des évolutions et correctifs.
+          EOF
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "api-v1.0.2+${{ github.run_number }}" \
+            CHANGELOG.md \
+            SHA256SUMS \
+            release-evidence/test-results.trx \
+            release-evidence/dotnet-outdated.txt \
+            --title "TableMaster API 1.0.2+${{ github.run_number }}" \
+            --notes-file release-notes.md \
+            --latest

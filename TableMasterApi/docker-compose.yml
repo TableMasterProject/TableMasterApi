@@ -21,7 +21,7 @@ services:
       - postgres-network
 
   api:
-    image: ghcr.io/tablemasterproject/tablemaster-api:prod
+    image: ghcr.io/tablemasterproject/tablemaster-api:${API_IMAGE_TAG:-prod}
     container_name: TableMasterApi-${NAME_ENV}
     depends_on:
       postgres:
@@ -29,6 +29,7 @@ services:
     environment:
       ASPNETCORE_URLS: "http://+:8080"
       ASPNETCORE_ENVIRONMENT: "Production"
+      APP_VERSION: "${APP_VERSION:-local}"
       ConnectionStrings__DefaultConnection: "Host=postgres;Port=${DB_PORT:-5432};Database=${DB_NAME:-TableMaster};Username=${DB_USER:-postgres};Password=${DB_PASSWORD};"
       ConfigPerso__SecretKey: "${JWT_SECRET}"
       ConfigPerso__Issuer: "${JWT_ISSUER:-TableMasterApi}"
@@ -46,6 +47,8 @@ services:
       AppLinks__PasswordResetPath: "${APP_LINKS_PASSWORD_RESET_PATH:-/reset-password}"
       AppLinks__ReservationPath: "${APP_LINKS_RESERVATION_PATH:-/reservations/{reservationId}}"
       Sentry__Dsn: "${SENTRY_DSN}"
+      Sentry__Environment: "production"
+      Sentry__Release: "${SENTRY_RELEASE:-tablemaster-api@local}"
       Sentry__Debug: "${SENTRY_DEBUG:-false}"
       Sentry__TracesSampleRate: "${SENTRY_TRACES_SAMPLE_RATE:-0.1}"
       Sentry__SendDefaultPii: "${SENTRY_SEND_DEFAULT_PII:-false}"
@@ -56,7 +59,7 @@ services:
     volumes:
       - ./tablemaster-firebase.json:/App/tablemaster-firebase.json:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

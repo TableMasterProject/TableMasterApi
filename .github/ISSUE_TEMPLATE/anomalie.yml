@@ -1,0 +1,103 @@
+name: Consigner une anomalie
+description: Signaler, reproduire et suivre une anomalie de TableMaster jusqu'à sa release.
+title: "[P3] Composant - description courte"
+labels:
+  - anomalie
+body:
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Criticité
+      description: P1 indisponibilité/perte de données, P2 fonction majeure bloquée, P3 dégradation, P4 défaut mineur.
+      options:
+        - P1 - Critique
+        - P2 - Haute
+        - P3 - Normale
+        - P4 - Faible
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Composant
+      options:
+        - API
+        - Application Android
+        - Application web
+        - PostgreSQL
+        - Déploiement / Docker / Nginx
+        - Service externe
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexte et environnement
+      description: Environnement, version/release, SHA, appareil, OS ou navigateur. Ne jamais inclure de secret ni de donnée personnelle inutile.
+      placeholder: Production - mobile 1.0.2+38 - API SHA abc123 - Android 15
+    validations:
+      required: true
+
+  - type: textarea
+    id: prerequisites
+    attributes:
+      label: Préconditions
+      description: État et données non sensibles nécessaires avant la reproduction.
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Étapes de reproduction
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Résultat attendu
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Résultat obtenu et fréquence
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact et contournement
+      description: Utilisateurs touchés, blocage, fréquence et éventuel contournement.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Preuves anonymisées
+      description: Identifiant d'événement Sentry, capture, horodatage, logs ou réponse HTTP sans token.
+
+  - type: textarea
+    id: analysis
+    attributes:
+      label: Analyse et correction préconisée
+      description: Cause retenue ou hypothèses, correction envisagée et risques de régression.
+
+  - type: textarea
+    id: delivery
+    attributes:
+      label: Traçabilité du traitement
+      description: Branche, commit, tests, run CI, release, validation et rollback. À compléter pendant le traitement.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Protection des données
+      options:
+        - label: J'ai vérifié que ce ticket ne contient aucun mot de passe, token, webhook, clé privée, DSN ou donnée personnelle inutile.
+          required: true

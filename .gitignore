@@ -8,6 +8,8 @@ core.[0-9]*
 
 # dotenv files
 .env
+.deployment.env
+backups/
 
 # Firebase Admin SDK service account key
 TableMasterApi/tablemaster-firebase.json

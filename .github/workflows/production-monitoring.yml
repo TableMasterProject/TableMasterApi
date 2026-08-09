@@ -1,0 +1,255 @@
+name: Production Monitoring
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      simulate_failure:
+        description: Simuler une panne sans toucher à la production
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: tablemaster-production-monitoring
+  cancel-in-progress: false
+
+jobs:
+  probe-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+
+    steps:
+      - name: Probe services and TLS
+        id: probe
+        shell: bash
+        env:
+          SIMULATE_FAILURE: ${{ inputs.simulate_failure || 'false' }}
+        run: |
+          set -u
+
+          failures=()
+          warnings=()
+
+          probe_url() {
+            local label="$1"
+            local url="$2"
+            local response_file
+            response_file="$(mktemp)"
+
+            if ! curl \
+              --fail \
+              --silent \
+              --show-error \
+              --location \
+              --max-time 10 \
+              --retry 2 \
+              --retry-delay 10 \
+              --retry-all-errors \
+              --output "$response_file" \
+              "$url"; then
+              failures+=("${label}: ${url} ne répond pas après trois tentatives")
+              rm -f "$response_file"
+              return
+            fi
+
+            if [[ "$label" == "API health" || "$label" == "API ready" ]]; then
+              if ! grep -q '"status":"Healthy"' "$response_file"; then
+                failures+=("${label}: la réponse ne contient pas le statut Healthy")
+              fi
+            fi
+
+            rm -f "$response_file"
+          }
+
+          probe_url "Application web" "https://app.tablemaster.lmpe.ovh/"
+          probe_url "API health" "https://api.tablemaster.lmpe.ovh/health"
+          probe_url "API ready" "https://api.tablemaster.lmpe.ovh/ready"
+
+          certificate_end_date="$(
+            echo | openssl s_client \
+              -connect api.tablemaster.lmpe.ovh:443 \
+              -servername api.tablemaster.lmpe.ovh \
+              2>/dev/null \
+              | openssl x509 -noout -enddate 2>/dev/null \
+              | cut -d= -f2-
+          )"
+
+          if [[ -z "$certificate_end_date" ]]; then
+            failures+=("TLS: impossible de lire la date d'expiration du certificat")
+          else
+            certificate_epoch="$(date -u -d "$certificate_end_date" +%s)"
+            now_epoch="$(date -u +%s)"
+            remaining_days="$(( (certificate_epoch - now_epoch) / 86400 ))"
+
+            if (( remaining_days < 7 )); then
+              failures+=("TLS: certificat expiré ou arrivant à expiration dans ${remaining_days} jour(s)")
+            elif (( remaining_days < 30 )); then
+              warnings+=("TLS: certificat arrivant à expiration dans ${remaining_days} jour(s)")
+            fi
+          fi
+
+          if [[ "$SIMULATE_FAILURE" == "true" ]]; then
+            failures+=("Simulation manuelle: panne contrôlée demandée depuis GitHub Actions")
+          fi
+
+          state="healthy"
+          if (( ${#failures[@]} > 0 )); then
+            state="failed"
+          elif (( ${#warnings[@]} > 0 )); then
+            state="warning"
+          fi
+
+          {
+            echo "État: ${state}"
+            echo "Horodatage UTC: $(date -u --iso-8601=seconds)"
+            echo ""
+            if (( ${#failures[@]} > 0 )); then
+              printf 'Échec: %s\n' "${failures[@]}"
+            fi
+            if (( ${#warnings[@]} > 0 )); then
+              printf 'Avertissement: %s\n' "${warnings[@]}"
+            fi
+            if [[ "$state" == "healthy" ]]; then
+              echo "Toutes les sondes sont opérationnelles."
+            fi
+          } | tee monitor-report.txt
+
+          echo "state=${state}" >> "$GITHUB_OUTPUT"
+          {
+            echo "summary<<MONITOR_SUMMARY"
+            cat monitor-report.txt
+            echo "MONITOR_SUMMARY"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Update monitoring incident
+        id: incident
+        uses: actions/github-script@v7
+        env:
+          MONITOR_STATE: ${{ steps.probe.outputs.state }}
+          MONITOR_SUMMARY: ${{ steps.probe.outputs.summary }}
+        with:
+          result-encoding: string
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const state = process.env.MONITOR_STATE;
+            const summary = process.env.MONITOR_SUMMARY;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const labels = [
+              { name: 'monitoring', color: '1D76DB', description: 'Incident créé par la supervision automatique' },
+              { name: 'incident', color: 'D93F0B', description: 'Incident de production' },
+              { name: 'P1', color: 'B60205', description: 'Criticité P1' },
+              { name: 'P3', color: 'FBCA04', description: 'Criticité P3' },
+              { name: 'anomalie', color: 'D4C5F9', description: 'Anomalie à analyser et corriger' }
+            ];
+
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: label.name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({ owner, repo, ...label });
+              }
+            }
+
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              labels: 'monitoring',
+              per_page: 100
+            });
+            const incident = openIssues.find(issue => !issue.pull_request);
+
+            if (state === 'healthy') {
+              if (!incident) return 'none';
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: incident.number,
+                body: `## Rétablissement confirmé\n\n${summary}\n\n[Run de contrôle](${runUrl})`
+              });
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: incident.number,
+                state: 'closed',
+                state_reason: 'completed'
+              });
+              return 'recovery';
+            }
+
+            const isFailure = state === 'failed';
+            const title = isFailure
+              ? '[P1] Monitoring - production indisponible ou non prête'
+              : '[P3] Monitoring - avertissement de production';
+            const issueLabels = ['monitoring', 'incident', 'anomalie', isFailure ? 'P1' : 'P3'];
+            const body = `## Détection automatique\n\n${summary}\n\n[Run de contrôle](${runUrl})\n\nCe ticket ne doit contenir aucun secret ni aucune donnée personnelle.`;
+
+            if (!incident) {
+              await github.rest.issues.create({ owner, repo, title, body, labels: issueLabels });
+              return isFailure ? 'failure' : 'warning';
+            }
+
+            if (incident.title !== title) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: incident.number,
+                title,
+                body,
+                labels: issueLabels
+              });
+              return isFailure ? 'failure' : 'warning';
+            }
+
+            return 'none';
+
+      - name: Notify Discord on state transition
+        if: steps.incident.outputs.result != 'none'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_MONITORING_WEBHOOK }}
+          TRANSITION: ${{ steps.incident.outputs.result }}
+          SUMMARY: ${{ steps.probe.outputs.summary }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$DISCORD_WEBHOOK" ]]; then
+            echo "Le secret DISCORD_MONITORING_WEBHOOK est absent." >&2
+            exit 1
+          fi
+
+          case "$TRANSITION" in
+            failure) prefix="🔴 TableMaster - incident de production" ;;
+            warning) prefix="🟠 TableMaster - avertissement de production" ;;
+            recovery) prefix="🟢 TableMaster - service rétabli" ;;
+            *) prefix="TableMaster - changement d'état" ;;
+          esac
+
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload="$(jq -n \
+            --arg content "${prefix}\n${SUMMARY}\nRun: ${run_url}" \
+            '{content: $content, allowed_mentions: {parse: []}}')"
+
+          curl --fail --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -d "$payload" \
+            "$DISCORD_WEBHOOK"
+
+      - name: Upload monitoring evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-monitor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: monitor-report.txt
+          retention-days: 30
+
+      - name: Mark unavailable production as failed
+        if: steps.probe.outputs.state == 'failed'
+        run: exit 1

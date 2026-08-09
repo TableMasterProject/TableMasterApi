@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Asp.Versioning;
 using DbUp;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Sentry;
@@ -178,7 +179,7 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddHealthChecks()
-    .AddCheck<PostgresHealthCheck>("postgres");
+    .AddCheck<PostgresHealthCheck>("postgres", tags: ["ready"]);
 
 if (builder.Configuration.GetValue("Features:RunMigrationsOnStartup", true))
 {
@@ -219,8 +220,16 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHealthChecks("/health");
-app.MapHealthChecks("/ready");
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    Predicate = _ => false,
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
+app.MapHealthChecks("/ready", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("ready"),
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
 app.MapHub<ReservationHub>("/reservationHub");
 
 if (app.Environment.IsDevelopment())
@@ -239,3 +248,7 @@ if (app.Environment.IsDevelopment())
 app.MapControllers();
 
 app.Run();
+
+public partial class Program
+{
+}
