@@ -144,11 +144,11 @@ jobs:
 
             echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-            chmod +x ops/*.sh
+            chmod +x ../ops/*.sh
             API_IMAGE_TAG="${{ github.sha }}" \
             APP_VERSION="1.0.2+${{ github.run_number }}" \
             SENTRY_RELEASE="tablemaster-api@1.0.2+${{ github.run_number }}" \
-              ./ops/deploy-api.sh
+              ../ops/deploy-api.sh
           EOF
 
   release:
