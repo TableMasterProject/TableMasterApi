@@ -90,6 +90,20 @@ services:
       retries: 3
 ```
 
+Avant la bascule du hub authentifié, recopier aussi la configuration
+`ops/nginx-api.reference.conf` dans le virtual host en service. Le bloc
+`location /reservationHub` utilise le format d'accès
+`tablemaster_hub_no_args`, qui journalise `$uri` sans la query string et évite
+donc d'écrire le JWT `access_token` transmis par les navigateurs.
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Après le rechargement, ouvrir une connexion Web SignalR puis vérifier qu'aucune
+occurrence de `access_token` n'est présente dans les logs Nginx récents.
+
 ### 2.4. Appliquer les migrations BDD
 
 Les migrations DbUp **s'exécutent automatiquement** au démarrage de l'API (scripts embarqués dans `TableMasterApi/sql-scripts/`). Aucune action manuelle requise.
