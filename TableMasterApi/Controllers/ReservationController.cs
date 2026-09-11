@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.Json;
 using Asp.Versioning;
 using TableMasterApi.DAL.Interfaces;
@@ -28,6 +29,7 @@ namespace TableMasterApi.Controllers
         private readonly IEmailNotificationService _emailNotificationService;
 
         private readonly IHubContext<ReservationHub> _hubContext;
+        private readonly ILogger<ReservationController> _logger;
 
         public ReservationController(
             IReservationDAL reservationDAL,
@@ -38,7 +40,8 @@ namespace TableMasterApi.Controllers
             IHubContext<ReservationHub> hubContext,
             FcmService fcmService,
             IEmailNotificationService? emailNotificationService = null,
-            IClosedDayExceptionDAL? closedDayExceptionDAL = null)
+            IClosedDayExceptionDAL? closedDayExceptionDAL = null,
+            ILogger<ReservationController>? logger = null)
         {
             _jwtService = jwtService;
             _reservationDAL = reservationDAL;
@@ -49,6 +52,24 @@ namespace TableMasterApi.Controllers
             _emailNotificationService = emailNotificationService ?? NullEmailNotificationService.Instance;
             _hubContext = hubContext;
             _closedDayExceptionDAL = closedDayExceptionDAL;
+            _logger = logger ?? NullLogger<ReservationController>.Instance;
+        }
+
+        /// <summary>
+        /// Diffuse un evenement temps reel sans jamais faire echouer l'operation metier.
+        /// A ce stade la reservation est deja committee en base : une panne du hub ne doit
+        /// pas transformer une operation reussie en HTTP 500.
+        /// </summary>
+        private async Task NotifyGroupAsync(string group, string method, object? payload)
+        {
+            try
+            {
+                await _hubContext.Clients.Group(group).SendAsync(method, payload);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "SignalR: echec de l'envoi de {Method} au groupe {Group}.", method, group);
+            }
         }
 
         private async Task SendPushNotificationToUsers(IEnumerable<long> userIds, string title, string body, object? data = null)
@@ -259,11 +280,11 @@ namespace TableMasterApi.Controllers
                 var created = await _reservationDAL.CreateReservationAsync(reservation);
 
                 // Envoi en temps réel via SignalR
-                await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + reservation.RestaurantId.Value)
-                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
+                await NotifyGroupAsync(ReservationHub.RESTAURANT_GROUP_PREFIX + reservation.RestaurantId.Value,
+                                       ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
 
-                await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + created.UserId!.Value)
-                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
+                await NotifyGroupAsync(ReservationHub.USER_GROUP_PREFIX + created.UserId!.Value,
+                                       ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
 
                 // Envoi de push si l'application est fermée
                 await SendPushNotificationToUsers(new[] { restaurant.UserId },
@@ -281,11 +302,11 @@ namespace TableMasterApi.Controllers
                 if (reservation.Status == ReservationStatus.Validee)
                 {
                     // Envoi en temps réel via SignalR
-                    await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + restaurant.Id)
-                                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(created));
+                    await NotifyGroupAsync(ReservationHub.RESTAURANT_GROUP_PREFIX + restaurant.Id,
+                                           ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(created));
 
-                    await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + created.UserId!.Value)
-                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(created));
+                    await NotifyGroupAsync(ReservationHub.USER_GROUP_PREFIX + created.UserId!.Value,
+                                           ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(created));
 
                     await SendPushNotificationToUsers(new[] { restaurant.UserId },
                         "Réservation validée",
@@ -385,8 +406,8 @@ namespace TableMasterApi.Controllers
 
                 var created = await _reservationDAL.CreateReservationAsync(input);
 
-                await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + restaurantId)
-                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
+                await NotifyGroupAsync(ReservationHub.RESTAURANT_GROUP_PREFIX + restaurantId,
+                                       ReservationHub.SEND_AT_ReceiveReservationCreated, JsonSerializer.Serialize(created));
 
                 return Ok(created);
             }
@@ -439,13 +460,13 @@ namespace TableMasterApi.Controllers
                 var resultes = await _reservationDAL.UpdateReservationStatus(id, reservationStatus);
 
                 // Envoi en temps réel via SignalR
-                await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + Restaurant.Id)
-                                          .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(resultes));
+                await NotifyGroupAsync(ReservationHub.RESTAURANT_GROUP_PREFIX + Restaurant.Id,
+                                       ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(resultes));
 
                 if (Reservation.UserId != null)
                 {
-                    await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + Reservation.UserId.Value)
-                                  .SendAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(resultes));
+                    await NotifyGroupAsync(ReservationHub.USER_GROUP_PREFIX + Reservation.UserId.Value,
+                                           ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, JsonSerializer.Serialize(resultes));
                 }
 
                 await SendPushNotificationToUsers(new[] { Restaurant.UserId },
@@ -505,14 +526,14 @@ namespace TableMasterApi.Controllers
                 // Envoi en temps réel via SignalR
                 if (deleted.RestaurantId != null)
                 {
-                    await _hubContext.Clients.Group(ReservationHub.RESTAURANT_GROUP_PREFIX + deleted.RestaurantId.Value)
-                                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
+                    await NotifyGroupAsync(ReservationHub.RESTAURANT_GROUP_PREFIX + deleted.RestaurantId.Value,
+                                           ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
                 }
 
                 if (deleted.UserId != null)
                 {
-                    await _hubContext.Clients.Group(ReservationHub.USER_GROUP_PREFIX + deleted.UserId.Value)
-                                              .SendAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
+                    await NotifyGroupAsync(ReservationHub.USER_GROUP_PREFIX + deleted.UserId.Value,
+                                           ReservationHub.SEND_AT_ReceiveReservationDeleted, id);
                 }
 
                 var restaurant = deleted.RestaurantId == null

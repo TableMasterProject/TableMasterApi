@@ -111,7 +111,15 @@ builder.Services.AddScoped<IDailyActivityDAL, DailyActivityDAL>();
 builder.Services.AddScoped<IClosedDayExceptionDAL, ClosedDayExceptionDAL>();
 builder.Services.AddScoped<IDeviceTokenDAL, DeviceTokenDAL>();
 
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    // Les valeurs par defaut (15 s / 30 s) ne laissent que deux pings de marge :
+    // trop juste pour un reseau mobile ou une application qui sort de veille.
+    options.KeepAliveInterval = TimeSpan.FromSeconds(10);
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+    options.HandshakeTimeout = TimeSpan.FromSeconds(15);
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+});
 
 builder.Services.AddAuthentication(options =>
 {

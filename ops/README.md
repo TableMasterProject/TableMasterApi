@@ -50,3 +50,24 @@ preuves d'une alerte et d'un rétablissement sans arrêter la production.
 - issue automatique et messages Discord DOWN/UP ;
 - événement Sentry avec environnement et release ;
 - résultat du smoke test, du rollback contrôlé et de la restauration.
+
+## nginx-api.reference.conf
+
+Configuration Nginx de référence pour l'API, notamment le bloc
+`location /reservationHub`. La configuration en service sur le VPS n'est pas
+versionnée : ce fichier sert de point de comparaison.
+
+Le hub SignalR exige `proxy_http_version 1.1`, les en-têtes `Upgrade` /
+`Connection`, et un `proxy_read_timeout` supérieur au `KeepAliveInterval` du
+serveur. Sans l'upgrade WebSocket le temps réel ne fonctionne pas : le client
+Flutter utilise `skipNegotiation: true`, donc aucun repli n'est possible.
+
+Vérifier la conformité du proxy en cas d'incident sur le temps réel :
+
+```bash
+# Doit répondre 101 Switching Protocols
+curl -i -N \
+  -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+  https://api.tablemaster.lmpe.ovh/reservationHub
+```
