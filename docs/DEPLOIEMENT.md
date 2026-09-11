@@ -28,9 +28,9 @@ Cette procédure couvre **un déploiement complet** de l'API .NET sur un serveur
 
 | Variable | Source | Description |
 | --- | --- | --- |
-| `ConnectionStrings__Postgres` | env serveur | DSN PostgreSQL : `Host=…;Port=5432;Database=…;Username=…;Password=…` |
-| `Jwt__Key` | env serveur | Secret JWT (64 chars min) |
-| `Jwt__Issuer` / `Jwt__Audience` | env serveur | Identifiants JWT |
+| `ConnectionStrings__DefaultConnection` | env serveur | DSN PostgreSQL : `Host=…;Port=5432;Database=…;Username=…;Password=…` |
+| `ConfigPerso__SecretKey` | env serveur | Secret JWT d'au moins 32 octets |
+| `ConfigPerso__Issuer` / `ConfigPerso__Audience` | env serveur | Identifiants JWT |
 | `tablemaster-firebase.json` | volume monté | Clé service-account Firebase Admin (FCM) |
 | `GoogleMaps__ApiKey` | env serveur | Clé API Maps |
 | `Sentry__Dsn` | env serveur / User Secrets local | DSN Sentry API, jamais commité |
@@ -95,6 +95,8 @@ services:
 Les migrations DbUp **s'exécutent automatiquement** au démarrage de l'API (scripts embarqués dans `TableMasterApi/sql-scripts/`). Aucune action manuelle requise.
 
 > Pour une exécution manuelle (debug) : lancer `dotnet run` localement contre la BDD cible avec la connection string. DbUp affichera dans la console les scripts appliqués.
+
+Pour la livraison sessions/temps réel, préparer le build Flutter coordonné avant la bascule. Les migrations `009`, `010` et `011` sont additives : déployer les migrations et l'API, vérifier le worker d'outbox, puis publier Flutter. Ne pas supprimer les nouvelles tables lors d'un rollback applicatif et ne pas réouvrir le hub anonyme.
 
 ### 2.5. Vérification post-déploiement
 
@@ -201,3 +203,4 @@ docker compose exec postgres psql -U $POSTGRES_USER -d $POSTGRES_DB \
 - `CI_CD.md` — pipeline GitHub Actions détaillé.
 - `SECURITY.md` — modèle de menaces et mesures OWASP.
 - `docs/MISE-A-JOUR.md` — procédure de montée de version (à venir).
+- `docs/SECURITE_SESSIONS_RESERVATIONS.md` — contrats d'erreur, SignalR, dates, sessions et reprise de l'outbox.

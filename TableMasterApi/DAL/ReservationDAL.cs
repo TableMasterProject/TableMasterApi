@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using Npgsql;
 using TableMasterApi.Model;
 using TableMasterApi.Service;
@@ -11,136 +11,83 @@ namespace TableMasterApi.DAL
     /// </summary>
     public class ReservationDAL : IReservationDAL
     {
-        private readonly ConfigPerso _config;
+        private readonly IDbConnectionFactory _connections;
+        private readonly ReservationRules _rules;
 
-        public ReservationDAL(ConfigPerso config)
+        public ReservationDAL(IDbConnectionFactory connections, ReservationRules rules)
         {
-            _config = config;
+            _connections = connections;
+            _rules = rules;
         }
 
         public async Task<ReservationOut> CreateReservationAsync(ReservationIn reservation)
         {
-            var query = @"
-                INSERT INTO ""Reservation"" (""UserId"", ""TableId"", ""RestaurantId"", ""ReservationDate"", ""NumberOfPeople"", ""SpecialRequest"", ""GuestName"", ""GuestPhone"", ""Status"")
-                VALUES (@UserId, @TableId, @RestaurantId, @ReservationDate, @NumberOfPeople, @SpecialRequest, @GuestName, @GuestPhone, @Status)
-                RETURNING ""Id"", ""UserId"", ""TableId"", ""RestaurantId"", ""ReservationDate"", ""NumberOfPeople"", ""SpecialRequest"", ""GuestName"", ""GuestPhone"", ""CreatedAt"", ""Status"";";
+            reservation.ReservationDate = ReservationRules.Normalize(reservation.ReservationDate);
+            using var connection = _connections.CreateConnection();
+            await ((NpgsqlConnection)connection).OpenAsync();
+            await using var transaction = await ((NpgsqlConnection)connection).BeginTransactionAsync();
+            await LockTableAsync(connection, transaction, reservation.TableId);
+            await ValidateAsync(connection, transaction, reservation, 0);
+            var created = await connection.QuerySingleAsync<ReservationOut>("""
+                INSERT INTO "Reservation" ("UserId","TableId","RestaurantId","ReservationDate","NumberOfPeople","SpecialRequest","GuestName","GuestPhone","Status")
+                VALUES (@UserId,@TableId,@RestaurantId,@ReservationDate,@NumberOfPeople,@SpecialRequest,@GuestName,@GuestPhone,@Status) RETURNING *;
+                """, new { reservation.UserId, reservation.TableId, reservation.RestaurantId, reservation.ReservationDate, reservation.NumberOfPeople,
+                    reservation.SpecialRequest, reservation.GuestName, reservation.GuestPhone, Status = (short)reservation.Status }, transaction);
+            await ReservationOutbox.EnqueueAsync(connection, transaction, created, "reservation_created");
+            await transaction.CommitAsync();
+            return created;
+        }
 
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+        private static async Task LockTableAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, long? tableId)
+        {
+            if (tableId.HasValue)
             {
-                await connection.OpenAsync();
-                await using var transaction = await connection.BeginTransactionAsync();
-
-                if (reservation.TableId != null)
-                {
-                    await connection.ExecuteAsync(
-                        "SELECT pg_advisory_xact_lock(@TableId);",
-                        new { TableId = reservation.TableId.Value },
-                        transaction);
-
-                    var hasConflict = await connection.QuerySingleAsync<bool>(@"
-                        SELECT EXISTS (
-                            SELECT 1
-                            FROM ""Reservation""
-                            WHERE ""TableId"" = @TableId
-                              AND ""Status"" = @ValidatedStatus
-                              AND ABS(EXTRACT(EPOCH FROM (""ReservationDate"" - @ReservationDate))) < @MarginSeconds
-                        );",
-                        new
-                        {
-                            TableId = reservation.TableId.Value,
-                            ValidatedStatus = (short)ReservationStatus.Validee,
-                            reservation.ReservationDate,
-                            MarginSeconds = 90 * 60
-                        },
-                        transaction);
-
-                    if (hasConflict)
-                    {
-                        await transaction.RollbackAsync();
-                        throw new ReservationConflictException();
-                    }
-                }
-
-                var result = await connection.QuerySingleAsync<ReservationOut>(query, new
-                {
-                    reservation.UserId,
-                    reservation.TableId,
-                    reservation.RestaurantId,
-                    reservation.ReservationDate,
-                    reservation.NumberOfPeople,
-                    reservation.SpecialRequest,
-                    reservation.GuestName,
-                    reservation.GuestPhone,
-                    Status = (short)reservation.Status
-                }, transaction);
-                await transaction.CommitAsync();
-                return result;
+                await connection.ExecuteAsync("SELECT pg_advisory_xact_lock(@Id)", new { Id = tableId.Value }, transaction);
+                await connection.QueryAsync<long>("SELECT \"Id\" FROM \"TableEntity\" WHERE \"Id\"=@Id FOR UPDATE", new { Id = tableId.Value }, transaction);
             }
         }
 
-        public async Task<ReservationOut?> UpdateReservationStatus(long id, ReservationStatus reservationStatus)
+        private async Task ValidateAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, ReservationIn reservation, long excludeId)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
-            {
-                await connection.OpenAsync();
-                await using var transaction = await connection.BeginTransactionAsync();
+            var table = await connection.QuerySingleOrDefaultAsync<TableEntityOut>("SELECT * FROM \"TableEntity\" WHERE \"Id\"=@Id", new { Id = reservation.TableId }, transaction);
+            if (table == null || table.RestaurantId != reservation.RestaurantId || reservation.NumberOfPeople <= 0 || table.NumberOfSeats < reservation.NumberOfPeople)
+                throw new ReservationRuleException("La table ou sa capacité ne permet pas cette réservation.");
+            var hours = await connection.QueryAsync<DailyActivityOut>("SELECT * FROM \"DailyActivity\" WHERE \"RestaurantId\"=@RestaurantId", new { reservation.RestaurantId }, transaction);
+            var closures = await connection.QueryAsync<ClosedDayExceptionOut>("SELECT * FROM \"ClosedDayException\" WHERE \"RestaurantId\"=@RestaurantId", new { reservation.RestaurantId }, transaction);
+            _rules.Validate(reservation.ReservationDate, reservation.UserId == null, hours, closures);
+            var conflict = await connection.QuerySingleAsync<bool>("""
+                SELECT EXISTS(SELECT 1 FROM "Reservation" WHERE "TableId"=@TableId AND "Id"<>@excludeId AND "Status"=1
+                    AND ABS(EXTRACT(EPOCH FROM ("ReservationDate"-@ReservationDate))) < 5400)
+                """, new { reservation.TableId, reservation.ReservationDate, excludeId }, transaction);
+            if (conflict) throw new ReservationConflictException();
+        }
 
-                if (reservationStatus == ReservationStatus.Validee)
-                {
-                    var reservation = await connection.QuerySingleOrDefaultAsync<ReservationOut>(@"
-                        SELECT ""TableId"", ""ReservationDate""
-                        FROM ""Reservation""
-                        WHERE ""Id"" = @Id;",
-                        new { Id = id },
-                        transaction);
+        private static async Task<ReservationOut?> LockReservationAsync(System.Data.IDbConnection connection, System.Data.IDbTransaction transaction, long id)
+        {
+            // The lookup is immutable routing information only: acquire the table before locking the reservation.
+            var tableId = await connection.QuerySingleOrDefaultAsync<long?>("SELECT \"TableId\" FROM \"Reservation\" WHERE \"Id\"=@id", new { id }, transaction);
+            await LockTableAsync(connection, transaction, tableId);
+            return await connection.QuerySingleOrDefaultAsync<ReservationOut>("SELECT * FROM \"Reservation\" WHERE \"Id\"=@id FOR UPDATE", new { id }, transaction);
+        }
 
-                    if (reservation?.TableId != null)
-                    {
-                        await connection.ExecuteAsync(
-                            "SELECT pg_advisory_xact_lock(@TableId);",
-                            new { TableId = reservation.TableId.Value },
-                            transaction);
-
-                        var hasConflict = await connection.QuerySingleAsync<bool>(@"
-                            SELECT EXISTS (
-                                SELECT 1
-                                FROM ""Reservation""
-                                WHERE ""Id"" <> @Id
-                                  AND ""TableId"" = @TableId
-                                  AND ""Status"" = @ValidatedStatus
-                                  AND ABS(EXTRACT(EPOCH FROM (""ReservationDate"" - @ReservationDate))) < @MarginSeconds
-                            );",
-                            new
-                            {
-                                Id = id,
-                                TableId = reservation.TableId.Value,
-                                ValidatedStatus = (short)ReservationStatus.Validee,
-                                reservation.ReservationDate,
-                                MarginSeconds = 90 * 60
-                            },
-                            transaction);
-
-                        if (hasConflict)
-                        {
-                            await transaction.RollbackAsync();
-                            throw new ReservationConflictException();
-                        }
-                    }
-                }
-
-                var query = @"
-                            UPDATE ""Reservation"" 
-                                SET ""Status"" = @ReservationStatus
-                            WHERE ""Id"" = @Id
-                            RETURNING ""Id"", ""UserId"", ""TableId"", ""RestaurantId"", ""ReservationDate"", ""NumberOfPeople"", ""SpecialRequest"", ""GuestName"", ""GuestPhone"", ""CreatedAt"", ""Status""";
-                var updatedReservation = await connection.QuerySingleOrDefaultAsync<ReservationOut>(query, new
-                {
-                    Id = id,
-                    ReservationStatus = (short)reservationStatus,
-                }, transaction);
-                await transaction.CommitAsync();
-                return updatedReservation;
-            }
+        public async Task<ReservationOut?> UpdateReservationStatus(long id, ReservationStatus reservationStatus, ReservationStatus expectedStatus)
+        {
+            using var connection = _connections.CreateConnection();
+            await ((NpgsqlConnection)connection).OpenAsync();
+            await using var transaction = await ((NpgsqlConnection)connection).BeginTransactionAsync();
+            var reservation = await LockReservationAsync(connection, transaction, id);
+            if (reservation == null || reservation.Status != expectedStatus) throw new ReservationConflictException();
+            var allowed = expectedStatus == ReservationStatus.EnAttente && reservationStatus is ReservationStatus.Validee or ReservationStatus.AnnuleeParResto ||
+                expectedStatus == ReservationStatus.Validee && reservationStatus is ReservationStatus.Finie or ReservationStatus.AnnuleeParResto or ReservationStatus.AnnuleeParClient;
+            if (!allowed) throw new ReservationRuleException("Cette transition de statut n'est pas autorisée.");
+            if (reservationStatus == ReservationStatus.Validee) await ValidateAsync(connection, transaction, reservation, id);
+            var updated = await connection.QuerySingleOrDefaultAsync<ReservationOut>("""
+                UPDATE "Reservation" SET "Status"=@Status WHERE "Id"=@id AND "Status"=@Expected RETURNING *;
+                """, new { id, Status = (short)reservationStatus, Expected = (short)expectedStatus }, transaction);
+            if (updated == null) throw new ReservationConflictException();
+            await ReservationOutbox.EnqueueAsync(connection, transaction, updated, "reservation_status_updated");
+            await transaction.CommitAsync();
+            return updated;
         }
 
         public async Task<IEnumerable<ReservationOut>> GetReservations(SearchReservations searchReservations)
@@ -187,7 +134,7 @@ namespace TableMasterApi.DAL
         ORDER BY R.""ReservationDate"" ASC
         LIMIT @PageSize OFFSET @Offset;";
 
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            using (var connection = _connections.CreateConnection())
             {
                 // On ajoute RestaurantOut dans la liste des types génériques
                 // Ordre : <T1, T2, T3, T4, TReturn>
@@ -218,28 +165,17 @@ namespace TableMasterApi.DAL
             }
         }
 
-        public async Task<IEnumerable<ReservationAvailabilityOut>> GetAvailability(SearchReservations searchReservations)
+        public async Task<IEnumerable<ReservationAvailabilityOut>> GetAvailability(SearchReservationAvailability search)
         {
-            const string query = @"
-                SELECT ""TableId"", ""ReservationDate""
-                FROM ""Reservation""
-                WHERE ""RestaurantId"" = @RestaurantId
-                  AND ""Status"" = @ValidatedStatus
-                  AND (@MinDate IS NULL OR CAST(""ReservationDate"" AS DATE) >= @MinDate)
-                  AND (@MaxDate IS NULL OR CAST(""ReservationDate"" AS DATE) <= @MaxDate)
-                ORDER BY ""ReservationDate"" ASC
-                LIMIT @PageSize OFFSET @Offset;";
-
-            using var connection = new NpgsqlConnection(_config.ConnectionString);
-            return await connection.QueryAsync<ReservationAvailabilityOut>(query, new
-            {
-                RestaurantId = searchReservations.restaurantId,
-                ValidatedStatus = (short)ReservationStatus.Validee,
-                MinDate = searchReservations.minDate,
-                MaxDate = searchReservations.maxDate,
-                PageSize = searchReservations.PageSize ?? 200,
-                Offset = searchReservations.Offset ?? 0
-            });
+            if (!search.IsValid) throw new ReservationRuleException("Une journée unique et un restaurant sont obligatoires.");
+            using var connection = _connections.CreateConnection();
+            return await connection.QueryAsync<ReservationAvailabilityOut>("""
+                SELECT "TableId", "ReservationDate" FROM "Reservation"
+                WHERE "RestaurantId"=@RestaurantId AND "Status"=1 AND "TableId" IS NOT NULL
+                    AND "ReservationDate">@Start AND "ReservationDate"<@End
+                ORDER BY "ReservationDate";
+                """, new { RestaurantId = search.restaurantId, Start = search.minDate!.Value.ToDateTime(TimeOnly.MinValue).AddMinutes(-90),
+                    End = search.maxDate!.Value.AddDays(1).ToDateTime(TimeOnly.MinValue).AddMinutes(90) });
         }
         public async Task<ReservationOut?> GetMyReservationById(long id)
         {
@@ -280,7 +216,7 @@ namespace TableMasterApi.DAL
             WHERE 
                 R.""Id"" = @Id;";
 
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            using (var connection = _connections.CreateConnection())
             {
                 var reservations = await connection.QueryAsync<ReservationOut, UserOut, TableEntityOut, ReservationOut>(
                     query,
@@ -301,29 +237,21 @@ namespace TableMasterApi.DAL
                 return reservations.FirstOrDefault();
             }
         }
-        public async Task<ReservationOut?> Delete(long id)
+        public async Task<ReservationOut?> Delete(long id, ReservationStatus expectedStatus)
         {
-            var selectQuery = @"SELECT * FROM ""Reservation"" WHERE ""Id"" = @Id;";
-            var deleteQuery = @"DELETE FROM ""Reservation"" WHERE ""Id"" = @Id;";
-
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
-            {
-                var reservation = await connection.QueryFirstOrDefaultAsync<ReservationOut>(selectQuery, new
-                {
-                    Id = id
-                });
-
-                if (reservation == null)
-                    return null; // La réservation n'existe pas
-
-                var affectedRows = await connection.ExecuteAsync(deleteQuery, new
-                {
-                    Id = id
-                });
-
-                return affectedRows > 0 ? reservation : null;
-            }
+            using var connection = _connections.CreateConnection();
+            await ((NpgsqlConnection)connection).OpenAsync();
+            await using var transaction = await ((NpgsqlConnection)connection).BeginTransactionAsync();
+            var reservation = await LockReservationAsync(connection, transaction, id);
+            if (reservation == null || expectedStatus != ReservationStatus.EnAttente || reservation.Status != expectedStatus)
+                throw new ReservationConflictException();
+            var deleted = await connection.QuerySingleOrDefaultAsync<ReservationOut>("""
+                DELETE FROM "Reservation" WHERE "Id"=@id AND "Status"=@Expected RETURNING *;
+                """, new { id, Expected = (short)expectedStatus }, transaction);
+            if (deleted == null) throw new ReservationConflictException();
+            await ReservationOutbox.EnqueueAsync(connection, transaction, deleted, "reservation_cancelled");
+            await transaction.CommitAsync();
+            return deleted;
         }
-
     }
 }

@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using Npgsql;
 using TableMasterApi.Model;
 using TableMasterApi.DAL.Interfaces;
@@ -46,11 +46,10 @@ namespace TableMasterApi.DAL
         {
             var query = @"
                 UPDATE ""DailyActivity""
-                SET ""RestaurantId"" = @RestaurantId,
-                    ""DayOfWeek"" = @DayOfWeek,
+                SET ""DayOfWeek"" = @DayOfWeek,
                     ""StartTime"" = @StartTime,
                     ""EndTime"" = @EndTime
-                WHERE ""Id"" = @Id
+                WHERE ""Id"" = @Id AND ""RestaurantId"" = @RestaurantId
                 RETURNING ""Id"", ""RestaurantId"", ""DayOfWeek"", ""StartTime"", ""EndTime"", ""CreatedAt""";
 
             using var connection = new NpgsqlConnection(_config.ConnectionString);

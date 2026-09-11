@@ -8,7 +8,7 @@
 | Faille OWASP | Couverture | Localisation |
 | --- | :---: | --- |
 | A01 Broken Access Control | ✅ | `[Authorize]` + `ICurrentUserService` |
-| A02 Cryptographic Failures | ✅ | TLS (Nginx), `BCrypt`/hash mot de passe, JWT signé |
+| A02 Cryptographic Failures | ✅ | TLS (Nginx), `PasswordHasher`, JWT signé |
 | A03 Injection | ✅ | Dapper paramètres nommés, jamais de concat |
 | A04 Insecure Design | ✅ | Architecture en couches, threat-model documenté |
 | A05 Security Misconfiguration | ✅ | Secrets hors code, Docker minimal, headers Nginx |
@@ -26,7 +26,7 @@
 
 **Mesures :**
 - Tous les controllers sensibles décorés `[Authorize]`.
-- L'identité courante est résolue via `ICurrentUserService` (claim `sub`) — jamais via paramètre client.
+- L'identité courante est résolue via `ICurrentUserService` (claim `UserId`) — jamais via paramètre client.
 - Les méthodes "mes ressources" (`/Reservation/My`, etc.) filtrent côté DAL sur `current_user.Id`.
 - Les opérations sur le restaurant vérifient que `restaurant.UserId == currentUser.Id` avant write/update/delete.
 
@@ -39,7 +39,7 @@
 **Mesures :**
 - TLS terminé au reverse-proxy Nginx (Let's Encrypt) ; HSTS activé.
 - Mots de passe utilisateurs hashés (jamais stockés en clair).
-- JWT signés HS256 avec secret stocké en variable d'environnement (`Jwt:Key`) — jamais commité.
+- JWT signés HS256 avec secret stocké en variable d'environnement (`ConfigPerso__SecretKey`) — jamais commité.
 - Clé Firebase Admin (`tablemaster-firebase.json`) hors Git, montée en volume Docker.
 
 **Contre-exemple à ne pas faire** : `appsettings.json` ne doit contenir aucun secret de production.
@@ -87,12 +87,12 @@
 ## A07 — Identification & Authentication Failures
 
 **Mesures :**
-- JWT à courte durée (~15 min) + refresh token long avec **rotation à chaque usage**.
-- Refresh tokens persistés en BDD avec date d'expiration + `IsRevoked` (`AuthDAL`).
+- JWT de cinq minutes, accepté six minutes au maximum avec le clock skew, et refresh token long avec **rotation transactionnelle à chaque usage**.
+- Refresh tokens hashés, uniques et persistés dans PostgreSQL avec leur date d'expiration (`UserDAL`).
 - Logout : révocation côté serveur (DeviceToken supprimé) + suppression côté client.
 - `JwtService` centralise génération + validation — aucun fork dans les controllers.
 
-**Améliorations à venir** : rate limiting sur `/Auth` (ASP.NET Rate Limiting middleware) pour mitiger le brute-force.
+Le rate limiting ASP.NET est appliqué aux endpoints publics d'authentification.
 
 ## A08 — Software & Data Integrity Failures
 

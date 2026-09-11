@@ -74,7 +74,7 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
-        public async Task CreateRoom_ShouldReturnUnauthorized_WhenRestaurantBelongsToAnotherUser()
+        public async Task CreateRoom_ShouldReturnForbidden_WhenRestaurantBelongsToAnotherUser()
         {
             var roomDal = new Mock<IRoomDAL>();
             var restaurantDal = new Mock<IRestaurantDAL>();
@@ -90,7 +90,7 @@ namespace TableMasterApi.Tests.Controllers
                 BoundaryPoints = RestaurantRoomDefaults.DefaultBoundary()
             });
 
-            result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+            result.Result.Should().BeOfType<ForbidResult>();
             roomDal.Verify(x => x.CreateRoomAsync(It.IsAny<RestaurantRoomIn>()), Times.Never);
         }
 
@@ -216,7 +216,7 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
-        public async Task SaveLayout_ShouldReturnUnauthorized_WhenRestaurantBelongsToAnotherUser()
+        public async Task SaveLayout_ShouldReturnForbidden_WhenRestaurantBelongsToAnotherUser()
         {
             var roomDal = new Mock<IRoomDAL>();
             var restaurantDal = new Mock<IRestaurantDAL>();
@@ -228,7 +228,7 @@ namespace TableMasterApi.Tests.Controllers
 
             var result = await controller.SaveLayout(5, new RestaurantRoomLayoutIn { Room = TestData.RoomIn() });
 
-            result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+            result.Result.Should().BeOfType<ForbidResult>();
             roomDal.Verify(x => x.SaveLayoutAsync(It.IsAny<long>(), It.IsAny<RestaurantRoomLayoutIn>()), Times.Never);
         }
 

@@ -1,4 +1,4 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TableMasterApi.DAL.Interfaces;
@@ -13,12 +13,14 @@ namespace TableMasterApi.Controllers
     public class RestaurantController : ControllerBase
     {
         private readonly IRestaurantDAL _restaurantDAL;
-        private readonly JwtService _jwtService;
+        private readonly ICurrentUserService _currentUser;
+        private readonly IAvailabilityNotifier? _availability;
 
-        public RestaurantController(IRestaurantDAL restaurantDAL, JwtService jwtService)
+        public RestaurantController(IRestaurantDAL restaurantDAL, JwtService jwtService, ICurrentUserService? currentUser = null, IAvailabilityNotifier? availability = null)
         {
             _restaurantDAL = restaurantDAL;
-            _jwtService = jwtService;
+            _currentUser = currentUser ?? new CurrentUserService();
+            _availability = availability;
         }
 
         // GET: api/Restaurant
@@ -28,15 +30,14 @@ namespace TableMasterApi.Controllers
         {
             try
             {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+                var idUserToken = _currentUser.GetUserId(User);
 
                 var restaurants = await _restaurantDAL.GetRestaurants(search);
                 return Ok(restaurants);
             }
-            catch (Exception e)
+            catch
             {
-                return StatusCode(500, e.Message);
+                throw;
             }
         }
 
@@ -47,8 +48,7 @@ namespace TableMasterApi.Controllers
         {
             try
             {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+                var idUserToken = _currentUser.GetUserId(User);
 
                 var restaurant = await _restaurantDAL.GetRestaurantById(id);
                 if (restaurant == null)
@@ -56,9 +56,9 @@ namespace TableMasterApi.Controllers
 
                 return Ok(restaurant);
             }
-            catch (Exception e)
+            catch
             {
-                return StatusCode(500, e.Message);
+                throw;
             }
         }
 
@@ -69,8 +69,7 @@ namespace TableMasterApi.Controllers
         {
             try
             {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+                var idUserToken = _currentUser.GetUserId(User);
 
                 if (restaurant == null)
                 {
@@ -82,11 +81,15 @@ namespace TableMasterApi.Controllers
             }
             catch (GoogleMapsException e)
             {
-                return StatusCode(e.StatusCode, e.Message);
+                return StatusCode(
+                    e.StatusCode,
+                    e.StatusCode >= StatusCodes.Status500InternalServerError
+                        ? "Service de géolocalisation indisponible."
+                        : e.Message);
             }
-            catch (Exception e)
+            catch
             {
-                return StatusCode(500, e.Message);
+                throw;
             }
         }
 
@@ -97,8 +100,7 @@ namespace TableMasterApi.Controllers
         {
             try
             {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+                var idUserToken = _currentUser.GetUserId(User);
 
                 if (restaurant == null)
                 {
@@ -113,15 +115,20 @@ namespace TableMasterApi.Controllers
                 if (put == null)
                     return NotFound("Restaurant non trouvé ou modification impossible.");
 
+                if (_availability != null) await _availability.NotifyAsync(id);
                 return Ok(put);
             }
             catch (GoogleMapsException e)
             {
-                return StatusCode(e.StatusCode, e.Message);
+                return StatusCode(
+                    e.StatusCode,
+                    e.StatusCode >= StatusCodes.Status500InternalServerError
+                        ? "Service de géolocalisation indisponible."
+                        : e.Message);
             }
-            catch (Exception e)
+            catch
             {
-                return StatusCode(500, e.Message);
+                throw;
             }
         }
 
@@ -132,18 +139,18 @@ namespace TableMasterApi.Controllers
         {
             try
             {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+                var idUserToken = _currentUser.GetUserId(User);
 
                 var deleted = await _restaurantDAL.DeleteRestaurant(idUserToken, id);
                 if (!deleted)
                     return NotFound("Restaurant not found.");
 
+                if (_availability != null) await _availability.NotifyAsync(id);
                 return Ok(deleted);
             }
-            catch (Exception e)
+            catch
             {
-                return StatusCode(500, e.Message);
+                throw;
             }
         }
     }

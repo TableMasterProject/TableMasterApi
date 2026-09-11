@@ -56,7 +56,7 @@ namespace TableMasterApi.Tests.Controllers
             var reservationDal = new Mock<IReservationDAL>();
             var restaurantDal = new Mock<IRestaurantDAL>();
             var controller = CreateController(reservationDal: reservationDal, restaurantDal: restaurantDal);
-            var search = new SearchReservations
+            var search = new SearchReservationAvailability
             {
                 restaurantId = 10,
                 minDate = new DateOnly(2026, 7, 20),
@@ -246,25 +246,15 @@ namespace TableMasterApi.Tests.Controllers
         {
             var reservationDal = new Mock<IReservationDAL>();
             var tableDal = new Mock<ITableDAL>();
-            var controller = CreateController(reservationDal, tableDal);
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut());
+            var controller = CreateController(reservationDal, tableDal, restaurantDal);
             ControllerTestHelper.SetBearerToken(controller, _jwtService.GenerateAccessToken(12));
 
             var requestedDate = new DateTime(2026, 5, 12, 20, 0, 0, DateTimeKind.Utc);
             tableDal.Setup(x => x.GetTablesById(4))
                 .ReturnsAsync(new TableEntityOut { Id = 4, RestaurantId = 10, TableNumber = 1, NumberOfSeats = 4 });
-            reservationDal.Setup(x => x.GetReservations(It.IsAny<SearchReservations>()))
-                .ReturnsAsync(
-                [
-                    new ReservationOut
-                    {
-                        Id = 1,
-                        TableId = 4,
-                        RestaurantId = 10,
-                        ReservationDate = requestedDate.AddMinutes(60),
-                        NumberOfPeople = 2,
-                        Status = ReservationStatus.Validee
-                    }
-                ]);
+            reservationDal.Setup(x => x.CreateReservationAsync(It.IsAny<ReservationIn>())).ThrowsAsync(new ReservationConflictException());
 
             var result = await controller.CreateReservation(new ReservationIn
             {
@@ -275,7 +265,7 @@ namespace TableMasterApi.Tests.Controllers
             });
 
             result.Result.Should().BeOfType<ConflictObjectResult>();
-            reservationDal.Verify(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()), Times.Never);
+            reservationDal.Verify(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()), Times.Once);
         }
 
         [Fact]
@@ -342,7 +332,7 @@ namespace TableMasterApi.Tests.Controllers
             hub.ClientProxy.Verify(
                 x => x.SendCoreAsync(ReservationHub.SEND_AT_ReceiveReservationCreated, It.IsAny<object?[]>(), It.IsAny<CancellationToken>()),
                 Times.Exactly(2));
-            emailNotificationService.Verify(x => x.SendReservationCreatedAsync(created, restaurant, It.IsAny<CancellationToken>()), Times.Once);
+            emailNotificationService.Verify(x => x.SendReservationCreatedAsync(created, restaurant, It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
@@ -534,24 +524,12 @@ namespace TableMasterApi.Tests.Controllers
 
             restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(TestData.RestaurantOut(id: 10, userId: 42));
             tableDal.Setup(x => x.GetTablesById(4)).ReturnsAsync(TestData.TableOut());
-            reservationDal.Setup(x => x.GetReservations(It.IsAny<SearchReservations>()))
-                .ReturnsAsync(
-                [
-                    new ReservationOut
-                    {
-                        Id = 1,
-                        TableId = 4,
-                        RestaurantId = 10,
-                        ReservationDate = requestedDate.AddMinutes(60),
-                        NumberOfPeople = 2,
-                        Status = ReservationStatus.Validee
-                    }
-                ]);
+            reservationDal.Setup(x => x.CreateReservationAsync(It.IsAny<ReservationIn>())).ThrowsAsync(new ReservationConflictException());
 
             var result = await controller.CreateQuickReservation(10, input);
 
             result.Result.Should().BeOfType<ConflictObjectResult>();
-            reservationDal.Verify(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()), Times.Never);
+            reservationDal.Verify(x => x.CreateReservationAsync(It.IsAny<ReservationIn>()), Times.Once);
         }
 
         [Fact]
@@ -568,7 +546,7 @@ namespace TableMasterApi.Tests.Controllers
             var result = await controller.UpdateReservationStatus(1, ReservationStatus.Validee);
 
             result.Result.Should().BeOfType<ForbidResult>();
-            reservationDal.Verify(x => x.UpdateReservationStatus(It.IsAny<long>(), It.IsAny<ReservationStatus>()), Times.Never);
+            reservationDal.Verify(x => x.UpdateReservationStatus(It.IsAny<long>(), It.IsAny<ReservationStatus>(), It.IsAny<ReservationStatus>()), Times.Never);
         }
 
         [Fact]
@@ -587,7 +565,7 @@ namespace TableMasterApi.Tests.Controllers
 
             reservationDal.Setup(x => x.GetMyReservationById(1)).ReturnsAsync(existing);
             restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(restaurant);
-            reservationDal.Setup(x => x.UpdateReservationStatus(1, ReservationStatus.Validee)).ReturnsAsync(updated);
+            reservationDal.Setup(x => x.UpdateReservationStatus(1, ReservationStatus.Validee, It.IsAny<ReservationStatus>())).ReturnsAsync(updated);
 
             var result = await controller.UpdateReservationStatus(1, ReservationStatus.Validee);
 
@@ -596,7 +574,7 @@ namespace TableMasterApi.Tests.Controllers
             hub.ClientProxy.Verify(
                 x => x.SendCoreAsync(ReservationHub.SEND_AT_ReceiveReservationUpdateStatus, It.IsAny<object?[]>(), It.IsAny<CancellationToken>()),
                 Times.Exactly(2));
-            emailNotificationService.Verify(x => x.SendReservationStatusUpdatedAsync(updated, restaurant, ReservationStatus.Validee, It.IsAny<CancellationToken>()), Times.Once);
+            emailNotificationService.Verify(x => x.SendReservationStatusUpdatedAsync(updated, restaurant, ReservationStatus.Validee, It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
@@ -614,7 +592,7 @@ namespace TableMasterApi.Tests.Controllers
             var result = await controller.UpdateReservationStatus(1, ReservationStatus.Finie);
 
             result.Result.Should().BeOfType<ConflictObjectResult>();
-            reservationDal.Verify(x => x.UpdateReservationStatus(It.IsAny<long>(), It.IsAny<ReservationStatus>()), Times.Never);
+            reservationDal.Verify(x => x.UpdateReservationStatus(It.IsAny<long>(), It.IsAny<ReservationStatus>(), It.IsAny<ReservationStatus>()), Times.Never);
         }
 
         [Fact]
@@ -644,7 +622,7 @@ namespace TableMasterApi.Tests.Controllers
             var restaurant = TestData.RestaurantOut(userId: 99);
 
             reservationDal.Setup(x => x.GetMyReservationById(1)).ReturnsAsync(deleted);
-            reservationDal.Setup(x => x.Delete(1)).ReturnsAsync(deleted);
+            reservationDal.Setup(x => x.Delete(1, It.IsAny<ReservationStatus>())).ReturnsAsync(deleted);
             restaurantDal.Setup(x => x.GetRestaurantById(10)).ReturnsAsync(restaurant);
 
             var result = await controller.Delete(1);
@@ -654,7 +632,7 @@ namespace TableMasterApi.Tests.Controllers
             hub.ClientProxy.Verify(
                 x => x.SendCoreAsync(ReservationHub.SEND_AT_ReceiveReservationDeleted, It.IsAny<object?[]>(), It.IsAny<CancellationToken>()),
                 Times.Exactly(2));
-            emailNotificationService.Verify(x => x.SendReservationCancelledAsync(deleted, restaurant, It.IsAny<CancellationToken>()), Times.Once);
+            emailNotificationService.Verify(x => x.SendReservationCancelledAsync(deleted, restaurant, It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
@@ -669,7 +647,7 @@ namespace TableMasterApi.Tests.Controllers
             var result = await controller.Delete(1);
 
             result.Result.Should().BeOfType<ForbidResult>();
-            reservationDal.Verify(x => x.Delete(It.IsAny<long>()), Times.Never);
+            reservationDal.Verify(x => x.Delete(It.IsAny<long>(), It.IsAny<ReservationStatus>()), Times.Never);
         }
 
         private ReservationController CreateController(

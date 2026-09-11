@@ -17,7 +17,11 @@ using TableMasterApi.Service;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.WebHost.UseSentry();
+builder.WebHost.UseSentry(options =>
+{
+    options.SendDefaultPii = false;
+    options.SetBeforeSend(SentrySanitizer.Sanitize);
+});
 
 Dapper.SqlMapper.AddTypeHandler(new PostgresTimeSpanHandler());
 
@@ -51,6 +55,7 @@ builder.Services.AddSingleton(configPerso);
 builder.Services.AddSingleton<JwtService>();
 builder.Services.AddSingleton<FcmService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<IAvailabilityNotifier, AvailabilityNotifier>();
 builder.Services.AddSingleton<IDbConnectionFactory, PostgresConnectionFactory>();
 builder.Services.AddHttpClient<GoogleMapsService>();
 builder.Services.AddScoped<IAppLinkService, AppLinkService>();
@@ -88,6 +93,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddRateLimiter(options =>
 {
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddPolicy("AuthPolicy", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
@@ -110,6 +116,10 @@ builder.Services.AddScoped<IReviewDAL, ReviewDAL>();
 builder.Services.AddScoped<IDailyActivityDAL, DailyActivityDAL>();
 builder.Services.AddScoped<IClosedDayExceptionDAL, ClosedDayExceptionDAL>();
 builder.Services.AddScoped<IDeviceTokenDAL, DeviceTokenDAL>();
+builder.Services.AddReservationServices(
+    builder.Configuration.GetValue(
+        "Features:RunNotificationWorker",
+        !builder.Environment.IsEnvironment("Testing")));
 
 builder.Services.AddSignalR(options =>
 {
@@ -128,6 +138,19 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            // Browser WebSocket APIs send the bearer token in the query string.
+            if (context.Request.Path.StartsWithSegments("/reservationHub") &&
+                !context.Request.Headers.ContainsKey("Authorization"))
+            {
+                context.Token = context.Request.Query["access_token"];
+            }
+            return Task.CompletedTask;
+        }
+    };
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
@@ -142,7 +165,7 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Filters.Add<ApiErrorResultFilter>());
 
 builder.Services.AddApiVersioning(options =>
 {
@@ -225,6 +248,19 @@ if (app.Environment.IsDevelopment() || builder.Configuration.GetValue("Features:
 app.UseCors("ConfiguredOrigins");
 app.UseHttpsRedirection();
 app.UseRateLimiter();
+app.UseStatusCodePages(async context =>
+{
+    var response = context.HttpContext.Response;
+    var error = response.StatusCode switch
+    {
+        401 => "Authentification requise.",
+        403 => "Accès refusé.",
+        404 => "Ressource introuvable.",
+        429 => "Trop de requêtes. Réessayez plus tard.",
+        _ => "Requête impossible."
+    };
+    await response.WriteAsJsonAsync(new { error, traceId = context.HttpContext.TraceIdentifier });
+});
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -238,7 +274,7 @@ app.MapHealthChecks("/ready", new HealthCheckOptions
     Predicate = registration => registration.Tags.Contains("ready"),
     ResponseWriter = HealthCheckResponseWriter.WriteAsync
 });
-app.MapHub<ReservationHub>("/reservationHub");
+app.MapHub<ReservationHub>("/reservationHub", options => options.CloseOnAuthenticationExpiration = true);
 
 if (app.Environment.IsDevelopment())
 {
@@ -259,4 +295,25 @@ app.Run();
 
 public partial class Program
 {
+}
+
+internal static class SentrySanitizer
+{
+    private static readonly System.Text.RegularExpressions.Regex AccessToken = new(
+        @"(?i)(^|[?&])access_token=[^&#\s]*",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    public static SentryEvent Sanitize(SentryEvent sentryEvent)
+    {
+        if (sentryEvent.Request is { } request)
+        {
+            request.Url = Redact(request.Url);
+            request.QueryString = Redact(request.QueryString);
+        }
+        return sentryEvent;
+    }
+
+    private static string? Redact(string? value) => value is null
+        ? null
+        : AccessToken.Replace(value, "$1access_token=[Filtered]");
 }

@@ -15,22 +15,34 @@ namespace TableMasterApi.Controllers
     public class UserController : ControllerBase
     {
         private readonly IUserDAL _userDAL;
-        private readonly IAuthDAL _authDAL;
         private readonly JwtService _jwtService;
+        private readonly ICurrentUserService _currentUserService;
 
-        public UserController(IUserDAL userDAL, IAuthDAL authDAL, JwtService jwtService)
+        [Microsoft.Extensions.DependencyInjection.ActivatorUtilitiesConstructor]
+        public UserController(
+            IUserDAL userDAL,
+            IAuthDAL authDAL,
+            JwtService jwtService,
+            ICurrentUserService currentUserService)
         {
             _userDAL = userDAL;
-            _authDAL = authDAL;
             _jwtService = jwtService;
+            _currentUserService = currentUserService;
+        }
+
+        public UserController(IUserDAL userDAL, IAuthDAL authDAL, JwtService jwtService)
+            : this(userDAL, authDAL, jwtService, new CurrentUserService())
+        {
         }
 
         [Authorize]
         [HttpGet("{id}")]
         public async Task<ActionResult<UserOut>> GetUserById(long id)
         {
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers.Authorization);
-            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            if (!TryGetCurrentUserId(out var idUserToken))
+            {
+                return Unauthorized();
+            }
             if (id != idUserToken)
             {
                 return Forbid();
@@ -51,15 +63,17 @@ namespace TableMasterApi.Controllers
         {
             try
             {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers.Authorization);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+                if (!TryGetCurrentUserId(out var idUserToken))
+                {
+                    return Unauthorized();
+                }
 
                 var userPut = await _userDAL.PutUser(idUserToken, user);
                 return Ok(userPut);
             }
             catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
             {
-                return StatusCode(403, "L'Email existe deja dans la base");
+                return Conflict("L'Email existe deja dans la base");
             }
         }
 
@@ -67,27 +81,29 @@ namespace TableMasterApi.Controllers
         [HttpPut("Password")]
         public async Task<ActionResult<bool>> PutPassword([FromBody] PasswordEntity passwordEntity)
         {
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers.Authorization);
-            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            if (!TryGetCurrentUserId(out var idUserToken))
+            {
+                return Unauthorized();
+            }
 
-            var user = await _userDAL.GetUserById(idUserToken);
-            if (user == null)
+            var passwordChange = await _userDAL.ChangePassword(
+                idUserToken,
+                passwordEntity.OldPassword,
+                passwordEntity.NewPassword);
+            if (passwordChange == PasswordChangeResult.UserNotFound)
             {
                 return NotFound();
             }
-
-            if (!_authDAL.VerifyPassword(user.Password, passwordEntity.OldPassword))
+            if (passwordChange == PasswordChangeResult.InvalidOldPassword)
             {
-                return NotFound("ancien Mot de passe incorrect");
+                return BadRequest("Ancien mot de passe incorrect.");
+            }
+            if (passwordChange != PasswordChangeResult.Success)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "Probleme lors du changement de mot de passe.");
             }
 
-            var passwordChange = await _userDAL.PutPassword(user.Id, passwordEntity.NewPassword);
-            if (!passwordChange)
-            {
-                return NotFound("Probleme lors du changement de mot de passe.");
-            }
-
-            return Ok(passwordChange);
+            return Ok(true);
         }
 
         [EnableRateLimiting("AuthPolicy")]
@@ -96,11 +112,12 @@ namespace TableMasterApi.Controllers
         {
             try
             {
-                var addedUser = await _userDAL.AddUser(user);
                 var refreshToken = _jwtService.GenerateRefreshToken();
                 var hashedRefreshToken = _jwtService.HashToken(refreshToken);
-
-                await _userDAL.SaveRefreshToken(addedUser.Id, hashedRefreshToken, DateTime.UtcNow.AddDays(30));
+                var addedUser = await _userDAL.AddUserWithSession(
+                    user,
+                    hashedRefreshToken,
+                    DateTime.UtcNow.AddDays(30));
 
                 return Ok(new LoginUserOut
                 {
@@ -111,7 +128,7 @@ namespace TableMasterApi.Controllers
             }
             catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
             {
-                return StatusCode(403, "L'Email existe deja dans la base");
+                return Conflict("L'Email existe deja dans la base");
             }
         }
 
@@ -119,8 +136,10 @@ namespace TableMasterApi.Controllers
         [HttpDelete]
         public async Task<ActionResult<UserOut>> DeleteUser()
         {
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers.Authorization);
-            var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            if (!TryGetCurrentUserId(out var idUserToken))
+            {
+                return Unauthorized();
+            }
 
             var deleted = await _userDAL.DeletePassword(idUserToken);
             if (!deleted)
@@ -129,6 +148,20 @@ namespace TableMasterApi.Controllers
             }
 
             return Ok(deleted);
+        }
+
+        private bool TryGetCurrentUserId(out long userId)
+        {
+            try
+            {
+                userId = _currentUserService.GetUserId(User);
+                return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                userId = default;
+                return false;
+            }
         }
     }
 }

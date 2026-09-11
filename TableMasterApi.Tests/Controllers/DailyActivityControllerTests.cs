@@ -60,7 +60,7 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
-        public async Task Put_ShouldReturnUnauthorized_WhenRestaurantBelongsToAnotherUser()
+        public async Task Put_ShouldReturnForbidden_WhenRestaurantBelongsToAnotherUser()
         {
             var dal = new Mock<IDailyActivityDAL>();
             var restaurantDal = new Mock<IRestaurantDAL>();
@@ -72,7 +72,7 @@ namespace TableMasterApi.Tests.Controllers
 
             var result = await controller.Put(7, TestData.DailyActivityIn());
 
-            result.Should().BeOfType<UnauthorizedObjectResult>();
+            result.Should().BeOfType<ForbidResult>();
             dal.Verify(x => x.UpdateAsync(It.IsAny<long>(), It.IsAny<DailyActivityIn>()), Times.Never);
         }
 

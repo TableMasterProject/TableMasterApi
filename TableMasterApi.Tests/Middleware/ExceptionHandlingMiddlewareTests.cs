@@ -56,6 +56,7 @@ namespace TableMasterApi.Tests.Middleware
                 "le middleware ne doit jamais exposer le message brut d'une exception non maitrisee");
             using var json = JsonDocument.Parse(body);
             json.RootElement.GetProperty("error").GetString().Should().Be("Une erreur interne est survenue.");
+            json.RootElement.GetProperty("traceId").GetString().Should().Be(context.TraceIdentifier);
         }
 
         [Fact]

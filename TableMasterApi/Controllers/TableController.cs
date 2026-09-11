@@ -1,4 +1,4 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
@@ -15,13 +15,17 @@ namespace TableMasterApi.Controllers
     public class TableController : ControllerBase
     {
         private readonly ITableDAL _tableDAL;
+        private readonly IRoomDAL? _rooms;
         private readonly IRestaurantDAL _restaurantDAL;
 
-        private readonly JwtService _jwtService;
+        private readonly ICurrentUserService _currentUser;
+        private readonly IAvailabilityNotifier? _availability;
 
-        public TableController(ITableDAL tableDAL, IRestaurantDAL restaurantDAL, JwtService jwtService)
+        public TableController(ITableDAL tableDAL, IRestaurantDAL restaurantDAL, JwtService jwtService, ICurrentUserService? currentUser = null, IAvailabilityNotifier? availability = null, IRoomDAL? rooms = null)
         {
-            _jwtService = jwtService;
+            _currentUser = currentUser ?? new CurrentUserService();
+            _availability = availability;
+            _rooms = rooms;
             _tableDAL = tableDAL;
             _restaurantDAL = restaurantDAL;
         }
@@ -30,22 +34,14 @@ namespace TableMasterApi.Controllers
         [HttpGet("Restaurant/{Id}")]
         public async Task<ActionResult<TableEntityOut>> GetTables(long Id)
         {
-            try
-            {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            var idUserToken = _currentUser.GetUserId(User);
 
-                var tables = await _tableDAL.GetTablesByRestaurantAsync(Id);
+            var tables = await _tableDAL.GetTablesByRestaurantAsync(Id);
 
-                if (tables == null)
-                    return NotFound("Aucune Table trouvée.");
+            if (tables == null)
+                return NotFound("Aucune Table trouvée.");
 
-                return Ok(tables);
-            }
-            catch (Exception e)
-            {
-                return StatusCode(500, e.Message);
-            }
+            return Ok(tables);
 
         }
 
@@ -53,64 +49,55 @@ namespace TableMasterApi.Controllers
         [HttpPost("Restaurant/{Id}")]
         public async Task<ActionResult<TableEntityOut>> CreateTable(long Id, [FromBody] TableEntityIn table)
         {
-            try
-            {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            var idUserToken = _currentUser.GetUserId(User);
 
-                if (table == null)
-                    return BadRequest("Données de réservation invalides.");
+            if (table == null)
+                return BadRequest("Données de réservation invalides.");
 
-                var restaurant = await _restaurantDAL.GetRestaurantById(Id);
+            var restaurant = await _restaurantDAL.GetRestaurantById(Id);
 
-                if (restaurant == null)
-                    return NotFound("Le restaurant n'existe pas");
-                if (restaurant.UserId != idUserToken)
-                    return Unauthorized("Vous n'êtes pas autorisé à modifier cette table");
+            if (restaurant == null)
+                return NotFound("Le restaurant n'existe pas");
+            if (restaurant.UserId != idUserToken)
+                return Forbid();
 
-                table.RestaurantId = Id;
+            table.RestaurantId = Id;
 
-                var created = await _tableDAL.CreateTable(table);
+            var validation = await ValidateRoomAsync(table.RoomId, Id);
+            if (validation != null) return validation;
+            var created = await _tableDAL.CreateTable(table);
+            if (created != null && _availability != null) await _availability.NotifyAsync(Id);
 
-                return Ok(created);
-            }
-            catch (Exception e)
-            {
-                return StatusCode(500, e.Message);
-            }
+            return Ok(created);
 
         }
         [Authorize]
         [HttpPut("{id}")]
         public async Task<ActionResult<TableEntityOut>> UpdateTable(long id, [FromBody] TableEntityIn table)
         {
-            try
-            {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            var idUserToken = _currentUser.GetUserId(User);
 
-                if (table == null)
-                    return BadRequest("Données de réservation invalides.");
+            if (table == null)
+                return BadRequest("Données de réservation invalides.");
 
-                var tableBefore = await _tableDAL.GetTablesById(id);
-                if (tableBefore == null )
-                    return NotFound("La table n'existe pas");
+            var tableBefore = await _tableDAL.GetTablesById(id);
+            if (tableBefore == null )
+                return NotFound("La table n'existe pas");
 
-                var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
+            var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
 
-                if (restaurant == null)
-                    return NotFound("Le restaurant n'existe pas");
-                if (restaurant.UserId != idUserToken)
-                    return Unauthorized("Vous n'êtes pas autorisé à modifier cette table");
+            if (restaurant == null)
+                return NotFound("Le restaurant n'existe pas");
+            if (restaurant.UserId != idUserToken)
+                return Forbid();
 
-                var created = await _tableDAL.UpdateTable(id, table);
+            table.RestaurantId = tableBefore.RestaurantId;
+            var validation = await ValidateRoomAsync(table.RoomId, tableBefore.RestaurantId);
+            if (validation != null) return validation;
+            var created = await _tableDAL.UpdateTable(id, table);
+            if (created != null && _availability != null) await _availability.NotifyAsync(tableBefore.RestaurantId);
 
-                return Ok(created);
-            }
-            catch (Exception e)
-            {
-                return StatusCode(500, e.Message);
-            }
+            return Ok(created);
 
         }
 
@@ -118,61 +105,58 @@ namespace TableMasterApi.Controllers
         [HttpDelete("{id}")]
         public async Task<ActionResult<bool>> Delete(long id)
         {
-            try
-            {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            var idUserToken = _currentUser.GetUserId(User);
 
-                var tableBefore = await _tableDAL.GetTablesById(id);
-                if (tableBefore == null)
-                    return NotFound("La table n'existe pas");
+            var tableBefore = await _tableDAL.GetTablesById(id);
+            if (tableBefore == null)
+                return NotFound("La table n'existe pas");
 
-                var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
+            var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
 
-                if (restaurant == null)
-                    return NotFound("Le restaurant n'existe pas");
-                if (restaurant.UserId != idUserToken)
-                    return Unauthorized("Vous n'êtes pas autorisé à modifier cette table");
+            if (restaurant == null)
+                return NotFound("Le restaurant n'existe pas");
+            if (restaurant.UserId != idUserToken)
+                return Forbid();
 
-                var deleted = await _tableDAL.DeleteTable(id);
+            var deleted = await _tableDAL.DeleteTable(id);
+            if (deleted && _availability != null) await _availability.NotifyAsync(tableBefore.RestaurantId);
 
-                return Ok(deleted);
-            }
-            catch (Exception e)
-            {
-                return StatusCode(500, e.Message);
-            }
+            return Ok(deleted);
         }
 
         [Authorize]
         [HttpPost("Restaurant/{Id}/Bulk")]
         public async Task<ActionResult<IEnumerable<TableEntityOut>>> ReplaceTables(long Id, [FromBody] List<TableEntityIn> tables)
         {
-            try
+            var idUserToken = _currentUser.GetUserId(User);
+
+            if (tables == null || !tables.Any())
+                return BadRequest("La liste des tables est vide.");
+
+            // Vérification de sécurité : le restaurant appartient-il à l'utilisateur ?
+            var restaurant = await _restaurantDAL.GetRestaurantById(Id);
+            if (restaurant == null)
+                return NotFound("Le restaurant n'existe pas");
+
+            if (restaurant.UserId != idUserToken)
+                return Forbid();
+
+            // Appel de la méthode DAL
+            foreach (var table in tables)
             {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
-
-                if (tables == null || !tables.Any())
-                    return BadRequest("La liste des tables est vide.");
-
-                // Vérification de sécurité : le restaurant appartient-il à l'utilisateur ?
-                var restaurant = await _restaurantDAL.GetRestaurantById(Id);
-                if (restaurant == null)
-                    return NotFound("Le restaurant n'existe pas");
-
-                if (restaurant.UserId != idUserToken)
-                    return Unauthorized("Vous n'êtes pas autorisé à modifier les tables de ce restaurant");
-
-                // Appel de la méthode DAL
-                var results = await _tableDAL.ReplaceTablesAsync(Id, tables);
-
-                return Ok(results);
+                var validation = await ValidateRoomAsync(table.RoomId, Id);
+                if (validation != null) return validation;
             }
-            catch (Exception e)
-            {
-                return StatusCode(500, e.Message);
-            }
+            var results = await _tableDAL.ReplaceTablesAsync(Id, tables);
+            if (_availability != null) await _availability.NotifyAsync(Id);
+
+            return Ok(results);
+        }
+        private async Task<ActionResult?> ValidateRoomAsync(long? roomId, long restaurantId)
+        {
+            if (roomId == null) return null;
+            var room = _rooms == null ? null : await _rooms.GetRoomByIdAsync(roomId.Value);
+            return room?.RestaurantId == restaurantId ? null : BadRequest("La salle ne fait pas partie de ce restaurant.");
         }
     }
 }

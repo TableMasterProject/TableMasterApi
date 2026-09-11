@@ -14,166 +14,136 @@ namespace TableMasterApi.Controllers
     {
         private readonly IRoomDAL _roomDAL;
         private readonly IRestaurantDAL _restaurantDAL;
-        private readonly JwtService _jwtService;
+        private readonly ICurrentUserService _currentUser;
+        private readonly IAvailabilityNotifier? _availability;
 
-        public RoomController(IRoomDAL roomDAL, IRestaurantDAL restaurantDAL, JwtService jwtService)
+        public RoomController(IRoomDAL roomDAL, IRestaurantDAL restaurantDAL, JwtService jwtService, ICurrentUserService? currentUser = null, IAvailabilityNotifier? availability = null)
         {
             _roomDAL = roomDAL;
             _restaurantDAL = restaurantDAL;
-            _jwtService = jwtService;
+            _currentUser = currentUser ?? new CurrentUserService();
+            _availability = availability;
         }
 
         [Authorize]
         [HttpGet("Restaurant/{id}")]
         public async Task<ActionResult<IEnumerable<RestaurantRoomOut>>> GetRooms(long id)
         {
-            try
+            var restaurant = await _restaurantDAL.GetRestaurantById(id);
+            if (restaurant == null)
             {
-                var restaurant = await _restaurantDAL.GetRestaurantById(id);
-                if (restaurant == null)
-                {
-                    return NotFound("Le restaurant n'existe pas");
-                }
+                return NotFound("Le restaurant n'existe pas");
+            }
 
-                var rooms = await _roomDAL.GetRoomsByRestaurantAsync(id);
-                return Ok(rooms);
-            }
-            catch (Exception e)
-            {
-                return StatusCode(500, e.Message);
-            }
+            var rooms = await _roomDAL.GetRoomsByRestaurantAsync(id);
+            return Ok(rooms);
         }
 
         [Authorize]
         [HttpPost("Restaurant/{id}")]
         public async Task<ActionResult<RestaurantRoomOut>> CreateRoom(long id, [FromBody] RestaurantRoomIn room)
         {
-            try
+            var idUserToken = GetUserIdFromToken();
+            var restaurant = await _restaurantDAL.GetRestaurantById(id);
+            if (restaurant == null)
             {
-                var idUserToken = GetUserIdFromToken();
-                var restaurant = await _restaurantDAL.GetRestaurantById(id);
-                if (restaurant == null)
-                {
-                    return NotFound("Le restaurant n'existe pas");
-                }
-
-                if (restaurant.UserId != idUserToken)
-                {
-                    return Unauthorized("Vous n'êtes pas autorisé à modifier les salles de ce restaurant");
-                }
-
-                var validation = ValidateRoom(room);
-                if (validation != null)
-                {
-                    return validation;
-                }
-
-                room.RestaurantId = id;
-                var created = await _roomDAL.CreateRoomAsync(room);
-                return Ok(created);
+                return NotFound("Le restaurant n'existe pas");
             }
-            catch (Exception e)
+
+            if (restaurant.UserId != idUserToken)
             {
-                return StatusCode(500, e.Message);
+                return Forbid();
             }
+
+            var validation = ValidateRoom(room);
+            if (validation != null)
+            {
+                return validation;
+            }
+
+            room.RestaurantId = id;
+            var created = await _roomDAL.CreateRoomAsync(room);
+            if (created != null && _availability != null) await _availability.NotifyAsync(room.RestaurantId);
+            return Ok(created);
         }
 
         [Authorize]
         [HttpPut("{id}")]
         public async Task<ActionResult<RestaurantRoomOut>> UpdateRoom(long id, [FromBody] RestaurantRoomIn room)
         {
-            try
+            var existing = await GetOwnedRoom(id);
+            if (existing.Result != null)
             {
-                var existing = await GetOwnedRoom(id);
-                if (existing.Result != null)
-                {
-                    return existing.Result;
-                }
-
-                var validation = ValidateRoom(room);
-                if (validation != null)
-                {
-                    return validation;
-                }
-
-                room.RestaurantId = existing.Value!.RestaurantId;
-                var updated = await _roomDAL.UpdateRoomAsync(id, room);
-                return Ok(updated);
+                return existing.Result;
             }
-            catch (Exception e)
+
+            var validation = ValidateRoom(room);
+            if (validation != null)
             {
-                return StatusCode(500, e.Message);
+                return validation;
             }
+
+            room.RestaurantId = existing.Value!.RestaurantId;
+            var updated = await _roomDAL.UpdateRoomAsync(id, room);
+            if (updated != null && _availability != null) await _availability.NotifyAsync(room.RestaurantId);
+            return Ok(updated);
         }
 
         [Authorize]
         [HttpDelete("{id}")]
         public async Task<ActionResult<bool>> DeleteRoom(long id)
         {
-            try
+            var existing = await GetOwnedRoom(id);
+            if (existing.Result != null)
             {
-                var existing = await GetOwnedRoom(id);
-                if (existing.Result != null)
-                {
-                    return existing.Result;
-                }
-
-                if (await _roomDAL.RoomHasTablesAsync(id))
-                {
-                    return Conflict("Impossible de supprimer une salle qui contient encore des tables.");
-                }
-
-                var deleted = await _roomDAL.DeleteRoomAsync(id);
-                return Ok(deleted);
+                return existing.Result;
             }
-            catch (Exception e)
+
+            if (await _roomDAL.RoomHasTablesAsync(id))
             {
-                return StatusCode(500, e.Message);
+                return Conflict("Impossible de supprimer une salle qui contient encore des tables.");
             }
+
+            var deleted = await _roomDAL.DeleteRoomAsync(id);
+            if (deleted && _availability != null) await _availability.NotifyAsync(existing.Value!.RestaurantId);
+            return Ok(deleted);
         }
 
         [Authorize]
         [HttpPut("{id}/Layout")]
         public async Task<ActionResult<RestaurantRoomLayoutOut>> SaveLayout(long id, [FromBody] RestaurantRoomLayoutIn layout)
         {
-            try
+            if (layout == null)
             {
-                if (layout == null)
-                {
-                    return BadRequest("Données de plan invalides.");
-                }
-
-                var existing = await GetOwnedRoom(id);
-                if (existing.Result != null)
-                {
-                    return existing.Result;
-                }
-
-                var validation = ValidateRoom(layout.Room);
-                if (validation != null)
-                {
-                    return validation;
-                }
-
-                layout.Room.RestaurantId = existing.Value!.RestaurantId;
-                var saved = await _roomDAL.SaveLayoutAsync(id, layout);
-                if (saved == null)
-                {
-                    return NotFound("La salle n'existe pas");
-                }
-
-                return Ok(saved);
+                return BadRequest("Données de plan invalides.");
             }
-            catch (Exception e)
+
+            var existing = await GetOwnedRoom(id);
+            if (existing.Result != null)
             {
-                return StatusCode(500, e.Message);
+                return existing.Result;
             }
+
+            var validation = ValidateRoom(layout.Room);
+            if (validation != null)
+            {
+                return validation;
+            }
+
+            layout.Room.RestaurantId = existing.Value!.RestaurantId;
+            var saved = await _roomDAL.SaveLayoutAsync(id, layout);
+            if (saved == null)
+            {
+                return NotFound("La salle n'existe pas");
+            }
+
+            if (_availability != null) await _availability.NotifyAsync(existing.Value!.RestaurantId);
+            return Ok(saved);
         }
 
         private long GetUserIdFromToken()
         {
-            var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-            return _jwtService.ExtractUserIdFromToken(token);
+            return _currentUser.GetUserId(User);
         }
 
         private async Task<ActionResult<RestaurantRoomOut>> GetOwnedRoom(long roomId)
@@ -193,7 +163,7 @@ namespace TableMasterApi.Controllers
 
             if (restaurant.UserId != idUserToken)
             {
-                return Unauthorized("Vous n'êtes pas autorisé à modifier cette salle");
+                return Forbid();
             }
 
             return room;

@@ -136,14 +136,8 @@ namespace TableMasterApi.Service
 
         private async Task SendAsync(EmailMessage message, CancellationToken cancellationToken)
         {
-            try
-            {
-                await _emailService.SendEmailAsync(message, cancellationToken);
-            }
-            catch (Exception exception)
-            {
-                _logger.LogWarning(exception, "L'envoi de l'email transactionnel a echoue pour {Email}.", message.ToEmail);
-            }
+            if (!await _emailService.SendEmailAsync(message, cancellationToken))
+                throw new NotificationDeliveryException("email_unavailable");
         }
 
         private static string BuildHtml(string title, string greeting, string body, string link, string buttonLabel)

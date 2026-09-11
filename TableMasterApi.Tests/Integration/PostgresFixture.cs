@@ -32,7 +32,7 @@ namespace TableMasterApi.Tests.Integration
             try
             {
                 _container = new PostgreSqlBuilder()
-                    .WithImage("postgres:16-alpine")
+                    .WithImage("postgres:18-alpine")
                     .WithDatabase("tablemaster_tests")
                     .WithUsername("tests")
                     .WithPassword("tests")
@@ -100,6 +100,7 @@ namespace TableMasterApi.Tests.Integration
 
             const string truncate = @"
                 TRUNCATE TABLE
+                    ""ReservationNotificationOutbox"",
                     ""UserRefreshTokens"",
                     ""Reservation"",
                     ""Review"",

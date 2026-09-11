@@ -186,5 +186,75 @@ namespace TableMasterApi.Tests.Integration
 
             deleted.Should().BeFalse();
         }
+
+        [SkippableFact]
+        public async Task ResetPassword_ConsumesTokenOnce_AndRevokesAllSessions()
+        {
+            Skip.IfNot(_fx.IsAvailable, _fx.UnavailableReason ?? "Docker indisponible");
+            await _fx.ResetAsync();
+
+            var setupDal = new UserDAL(_fx.Config);
+            var user = await setupDal.AddUser(new UserIn
+            {
+                Email = "reset-once@example.com",
+                Password = "OldPa$$w0rd",
+                FirstName = "Reset",
+                LastName = "Once",
+                AccountType = 1
+            });
+            await setupDal.SaveRefreshToken(user.Id, "session-to-revoke", DateTime.UtcNow.AddDays(7));
+            await setupDal.SavePasswordResetToken(user.Id, "one-use-reset", DateTime.UtcNow.AddHours(1));
+
+            var firstReset = new UserDAL(_fx.Config).ResetPassword("one-use-reset", "FirstNewPa$$word");
+            var secondReset = new UserDAL(_fx.Config).ResetPassword("one-use-reset", "SecondNewPa$$word");
+            var results = await Task.WhenAll(firstReset, secondReset);
+
+            results.Count(result => result).Should().Be(1);
+            var stored = await setupDal.GetUserById(user.Id);
+            stored.Should().NotBeNull();
+            var auth = new AuthDAL();
+            new[]
+            {
+                auth.VerifyPassword(stored!.Password, "FirstNewPa$$word"),
+                auth.VerifyPassword(stored.Password, "SecondNewPa$$word")
+            }.Count(matches => matches).Should().Be(1);
+
+            await using var connection = new NpgsqlConnection(_fx.ConnectionString);
+            (await connection.ExecuteScalarAsync<long>(
+                @"SELECT COUNT(*) FROM ""UserRefreshTokens"" WHERE ""UserId"" = @UserId",
+                new { UserId = user.Id })).Should().Be(0);
+            (await connection.ExecuteScalarAsync<long>(
+                @"SELECT COUNT(*) FROM ""UserPasswordResetTokens"" WHERE ""UserId"" = @UserId",
+                new { UserId = user.Id })).Should().Be(0);
+        }
+
+        [SkippableFact]
+        public async Task CreateSession_RacingPasswordChange_CannotPersistSessionForOldPassword()
+        {
+            Skip.IfNot(_fx.IsAvailable, _fx.UnavailableReason ?? "Docker indisponible");
+            await _fx.ResetAsync();
+
+            var setupDal = new UserDAL(_fx.Config);
+            var user = await setupDal.AddUser(new UserIn
+            {
+                Email = "login-race@example.com",
+                Password = "OldPa$$w0rd",
+                FirstName = "Login",
+                LastName = "Race",
+                AccountType = 1
+            });
+
+            var session = new UserDAL(_fx.Config).CreateSession(
+                user.Email, "OldPa$$w0rd", "old-password-session", DateTime.UtcNow.AddDays(7));
+            var passwordChange = new UserDAL(_fx.Config).ChangePassword(
+                user.Id, "OldPa$$w0rd", "NewPa$$w0rd!");
+            await Task.WhenAll(session, passwordChange);
+
+            passwordChange.Result.Should().Be(PasswordChangeResult.Success);
+            await using var connection = new NpgsqlConnection(_fx.ConnectionString);
+            (await connection.ExecuteScalarAsync<long>(
+                @"SELECT COUNT(*) FROM ""UserRefreshTokens"" WHERE ""UserId"" = @UserId",
+                new { UserId = user.Id })).Should().Be(0);
+        }
     }
 }

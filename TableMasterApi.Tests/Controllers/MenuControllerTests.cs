@@ -79,7 +79,7 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
-        public async Task Delete_ShouldReturnUnauthorized_WhenRestaurantBelongsToAnotherUser()
+        public async Task Delete_ShouldReturnForbidden_WhenRestaurantBelongsToAnotherUser()
         {
             var menuDal = new Mock<IMenuDAL>();
             var restaurantDal = new Mock<IRestaurantDAL>();
@@ -91,7 +91,7 @@ namespace TableMasterApi.Tests.Controllers
 
             var result = await controller.Delete(3);
 
-            result.Should().BeOfType<UnauthorizedObjectResult>();
+            result.Should().BeOfType<ForbidResult>();
             menuDal.Verify(x => x.DeleteAsync(It.IsAny<long>()), Times.Never);
         }
 

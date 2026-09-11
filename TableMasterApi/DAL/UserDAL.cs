@@ -13,6 +13,13 @@ namespace TableMasterApi.DAL
     /// </summary>
     public class UserDAL : IUserDAL
     {
+        private const string UserSelect = @"
+            SELECT
+                u.""Id"", u.""Email"", u.""Password"", u.""FirstName"", u.""LastName"", u.""AccountType"", u.""CreatedAt"",
+                r.""Id"" AS ""RestaurantId""
+            FROM ""User"" u
+            LEFT JOIN ""Restaurant"" r ON u.""Id"" = r.""UserId""";
+
         private readonly ConfigPerso _config;
 
         public UserDAL(ConfigPerso config)
@@ -23,9 +30,9 @@ namespace TableMasterApi.DAL
         // Méthode pour récupérer un utilisateur par son ID
         public async Task<UserDb?> GetUserById(long id)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
-                connection.Open();
+                await connection.OpenAsync();
                 var query = @"
                     SELECT 
                         u.""Id"", u.""Email"", u.""Password"", u.""FirstName"", u.""LastName"", u.""AccountType"", u.""CreatedAt"",
@@ -42,9 +49,9 @@ namespace TableMasterApi.DAL
 
         public async Task<UserDb?> GetUserByEmail(string email)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
-                connection.Open();
+                await connection.OpenAsync();
                 var query = @"
                     SELECT 
                         u.""Id"", u.""Email"", u.""Password"", u.""FirstName"", u.""LastName"", u.""AccountType"", u.""CreatedAt"",
@@ -65,28 +72,73 @@ namespace TableMasterApi.DAL
             var passwordHasher = new PasswordHasher<UserIn>();
             var hashedPassword = passwordHasher.HashPassword(user, user.Password);
 
-            // Mettre à jour le mot de passe haché dans l'objet utilisateur
-            user.Password = hashedPassword;
-
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
-                connection.Open();
+                await connection.OpenAsync();
 
                 var query = @"
                     INSERT INTO ""User"" (""Email"", ""Password"", ""FirstName"", ""LastName"", ""AccountType"")
                     VALUES (@Email, @Password, @FirstName, @LastName, @AccountType)
                     RETURNING ""Id"", ""Email"", ""FirstName"", ""LastName"", ""AccountType"", ""CreatedAt""";
 
-                var insertedUser = await connection.QuerySingleAsync<UserOut>(query, user);
+                var insertedUser = await connection.QuerySingleAsync<UserOut>(query, new
+                {
+                    user.Email,
+                    Password = hashedPassword,
+                    user.FirstName,
+                    user.LastName,
+                    user.AccountType
+                });
                 return insertedUser;
             }
         }
 
+        public async Task<UserOut> AddUserWithSession(
+            UserIn user,
+            string hashedRefreshToken,
+            DateTime refreshTokenExpiry)
+        {
+            var passwordHasher = new PasswordHasher<UserIn>();
+            var hashedPassword = passwordHasher.HashPassword(user, user.Password);
+
+            await using var connection = new NpgsqlConnection(_config.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            var insertedUser = await connection.QuerySingleAsync<UserOut>(
+                @"INSERT INTO ""User"" (""Email"", ""Password"", ""FirstName"", ""LastName"", ""AccountType"")
+                  VALUES (@Email, @Password, @FirstName, @LastName, @AccountType)
+                  RETURNING ""Id"", ""Email"", ""FirstName"", ""LastName"", ""AccountType"", ""CreatedAt""",
+                new
+                {
+                    user.Email,
+                    Password = hashedPassword,
+                    user.FirstName,
+                    user.LastName,
+                    user.AccountType
+                },
+                transaction);
+
+            await connection.ExecuteAsync(
+                @"INSERT INTO ""UserRefreshTokens"" (""UserId"", ""TokenHash"", ""ExpiryDate"")
+                  VALUES (@UserId, @TokenHash, @ExpiryDate)",
+                new
+                {
+                    UserId = insertedUser.Id,
+                    TokenHash = hashedRefreshToken,
+                    ExpiryDate = refreshTokenExpiry
+                },
+                transaction);
+
+            await transaction.CommitAsync();
+            return insertedUser;
+        }
+
         public async Task<UserOut> PutUser(long idUser, UserIn user)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
-                connection.Open();
+                await connection.OpenAsync();
 
                 var query = @"
                     UPDATE ""User""
@@ -108,34 +160,76 @@ namespace TableMasterApi.DAL
             var passwordHasher = new PasswordHasher<UserIn>();
             var hashedPassword = passwordHasher.HashPassword(null!, newPassword);
 
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using var connection = new NpgsqlConnection(_config.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            var lockedUserId = await connection.QuerySingleOrDefaultAsync<long?>(
+                @"SELECT ""Id"" FROM ""User"" WHERE ""Id"" = @UserId FOR UPDATE",
+                new { UserId = userId },
+                transaction);
+            if (lockedUserId is null)
             {
-                connection.Open();
-
-                var query = @"UPDATE ""User"" SET ""Password"" = @hashedPassword WHERE ""Id"" = @IdUser";
-
-                // Utilise Execute pour une mise à jour
-                var rowsAffected = await connection.ExecuteAsync(query, new { IdUser = userId, hashedPassword });
-
-                // Si aucune ligne n'a été affectée, la mise à jour n'a pas eu lieu
-                return rowsAffected > 0;
+                await transaction.RollbackAsync();
+                return false;
             }
+
+            await connection.ExecuteAsync(
+                @"UPDATE ""User"" SET ""Password"" = @HashedPassword WHERE ""Id"" = @UserId",
+                new { UserId = userId, HashedPassword = hashedPassword },
+                transaction);
+            await RevokeAuthenticationTokens(connection, transaction, userId);
+            await transaction.CommitAsync();
+            return true;
+        }
+
+        public async Task<PasswordChangeResult> ChangePassword(long userId, string oldPassword, string newPassword)
+        {
+            await using var connection = new NpgsqlConnection(_config.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            var storedHash = await connection.QuerySingleOrDefaultAsync<string?>(
+                @"SELECT ""Password"" FROM ""User"" WHERE ""Id"" = @UserId FOR UPDATE",
+                new { UserId = userId },
+                transaction);
+            if (storedHash is null)
+            {
+                await transaction.RollbackAsync();
+                return PasswordChangeResult.UserNotFound;
+            }
+
+            var passwordHasher = new PasswordHasher<UserIn>();
+            if (passwordHasher.VerifyHashedPassword(null!, storedHash, oldPassword) == PasswordVerificationResult.Failed)
+            {
+                await transaction.RollbackAsync();
+                return PasswordChangeResult.InvalidOldPassword;
+            }
+
+            var newHash = passwordHasher.HashPassword(null!, newPassword);
+            await connection.ExecuteAsync(
+                @"UPDATE ""User"" SET ""Password"" = @NewHash WHERE ""Id"" = @UserId",
+                new { UserId = userId, NewHash = newHash },
+                transaction);
+            await RevokeAuthenticationTokens(connection, transaction, userId);
+            await transaction.CommitAsync();
+            return PasswordChangeResult.Success;
         }
         public async Task<bool> DeletePassword(long id)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 await connection.OpenAsync();
                 using (var transaction = await connection.BeginTransactionAsync())
                 {
                     try
                     {
-                        var userExists = await connection.QuerySingleAsync<bool>(
-                            @"SELECT EXISTS(SELECT 1 FROM ""User"" WHERE ""Id"" = @IdUser);",
+                        var userExists = await connection.QuerySingleOrDefaultAsync<long?>(
+                            @"SELECT ""Id"" FROM ""User"" WHERE ""Id"" = @IdUser FOR UPDATE;",
                             new { IdUser = id },
                             transaction);
 
-                        if (!userExists)
+                        if (userExists is null)
                         {
                             await transaction.RollbackAsync();
                             return false;
@@ -235,26 +329,127 @@ namespace TableMasterApi.DAL
 
         public async Task<bool> SaveRefreshToken(long userId, string hashedToken, DateTime expiry)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using var connection = new NpgsqlConnection(_config.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            var userExists = await LockUser(connection, transaction, userId);
+            if (!userExists)
             {
-                connection.Open();
-
-                var query = @"INSERT INTO ""UserRefreshTokens"" (""UserId"", ""TokenHash"", ""ExpiryDate"") 
-                     VALUES (@UserId, @TokenHash, @ExpiryDate)";
-
-                // Execute la requête de suppression
-                var rowsAffected = await connection.ExecuteAsync(query, new { UserId = userId, TokenHash = hashedToken, ExpiryDate = expiry });
-
-                // Si une ligne a été affectée, la suppression a réussi
-                return rowsAffected > 0;
+                await transaction.RollbackAsync();
+                return false;
             }
+
+            var rowsAffected = await connection.ExecuteAsync(
+                @"INSERT INTO ""UserRefreshTokens"" (""UserId"", ""TokenHash"", ""ExpiryDate"")
+                  VALUES (@UserId, @TokenHash, @ExpiryDate)",
+                new { UserId = userId, TokenHash = hashedToken, ExpiryDate = expiry },
+                transaction);
+            await transaction.CommitAsync();
+            return rowsAffected > 0;
+        }
+
+        public async Task<UserDb?> CreateSession(
+            string email,
+            string password,
+            string hashedRefreshToken,
+            DateTime refreshTokenExpiry)
+        {
+            await using var connection = new NpgsqlConnection(_config.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            var user = await connection.QuerySingleOrDefaultAsync<UserDb>(
+                UserSelect + @" WHERE u.""Email"" = @Email FOR UPDATE OF u",
+                new { Email = email },
+                transaction);
+            if (user is null)
+            {
+                await transaction.RollbackAsync();
+                return null;
+            }
+
+            var passwordHasher = new PasswordHasher<UserIn>();
+            if (passwordHasher.VerifyHashedPassword(null!, user.Password, password) == PasswordVerificationResult.Failed)
+            {
+                await transaction.RollbackAsync();
+                return null;
+            }
+
+            await connection.ExecuteAsync(
+                @"INSERT INTO ""UserRefreshTokens"" (""UserId"", ""TokenHash"", ""ExpiryDate"")
+                  VALUES (@UserId, @TokenHash, @ExpiryDate)",
+                new
+                {
+                    UserId = user.Id,
+                    TokenHash = hashedRefreshToken,
+                    ExpiryDate = refreshTokenExpiry
+                },
+                transaction);
+            await transaction.CommitAsync();
+            return user;
+        }
+
+        public async Task<UserDb?> RotateRefreshToken(
+            string hashedRefreshToken,
+            string newHashedRefreshToken,
+            DateTime newExpiry)
+        {
+            await using var connection = new NpgsqlConnection(_config.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            var userId = await connection.QuerySingleOrDefaultAsync<long?>(
+                @"SELECT ""UserId"" FROM ""UserRefreshTokens""
+                  WHERE ""TokenHash"" = @TokenHash
+                    AND ""ExpiryDate"" > CURRENT_TIMESTAMP
+                  LIMIT 1",
+                new { TokenHash = hashedRefreshToken },
+                transaction);
+            if (userId is null)
+            {
+                await transaction.RollbackAsync();
+                return null;
+            }
+
+            var user = await connection.QuerySingleOrDefaultAsync<UserDb>(
+                UserSelect + @" WHERE u.""Id"" = @UserId FOR UPDATE OF u",
+                new { UserId = userId.Value },
+                transaction);
+            if (user is null)
+            {
+                await transaction.RollbackAsync();
+                return null;
+            }
+
+            var consumedUserId = await connection.QuerySingleOrDefaultAsync<long?>(
+                @"DELETE FROM ""UserRefreshTokens""
+                  WHERE ""TokenHash"" = @TokenHash
+                    AND ""UserId"" = @UserId
+                    AND ""ExpiryDate"" > CURRENT_TIMESTAMP
+                  RETURNING ""UserId""",
+                new { TokenHash = hashedRefreshToken, UserId = user.Id },
+                transaction);
+            if (consumedUserId is null)
+            {
+                await transaction.RollbackAsync();
+                return null;
+            }
+
+            await connection.ExecuteAsync(
+                @"INSERT INTO ""UserRefreshTokens"" (""UserId"", ""TokenHash"", ""ExpiryDate"")
+                  VALUES (@UserId, @TokenHash, @ExpiryDate)",
+                new { UserId = user.Id, TokenHash = newHashedRefreshToken, ExpiryDate = newExpiry },
+                transaction);
+            await transaction.CommitAsync();
+            return user;
         }
 
         public async Task<long?> GetUserIdByRefreshToken(string hashedToken)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
-                connection.Open();
+                await connection.OpenAsync();
 
                 string query = @"SELECT ""UserId"" FROM ""UserRefreshTokens""
                      WHERE ""TokenHash"" = @TokenHash AND ""ExpiryDate"" > CURRENT_TIMESTAMP";
@@ -265,49 +460,72 @@ namespace TableMasterApi.DAL
         
         public async Task<bool> DeleteRefreshToken(string hashedToken)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using var connection = new NpgsqlConnection(_config.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            var userId = await connection.QuerySingleOrDefaultAsync<long?>(
+                @"SELECT ""UserId"" FROM ""UserRefreshTokens"" WHERE ""TokenHash"" = @TokenHash LIMIT 1",
+                new { TokenHash = hashedToken },
+                transaction);
+            if (userId is null || !await LockUser(connection, transaction, userId.Value))
             {
-                await connection.OpenAsync();
-
-                var query = @"DELETE FROM ""UserRefreshTokens"" WHERE ""TokenHash"" = @TokenHash";
-
-                var rowsAffected = await connection.ExecuteAsync(query, new { TokenHash = hashedToken });
-
-                return rowsAffected > 0;
+                await transaction.RollbackAsync();
+                return false;
             }
+
+            var rowsAffected = await connection.ExecuteAsync(
+                @"DELETE FROM ""UserRefreshTokens"" WHERE ""TokenHash"" = @TokenHash",
+                new { TokenHash = hashedToken },
+                transaction);
+            await transaction.CommitAsync();
+            return rowsAffected > 0;
         }
 
         public async Task<bool> DeleteAllRefreshTokensForUser(long userId)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using var connection = new NpgsqlConnection(_config.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            if (!await LockUser(connection, transaction, userId))
             {
-                await connection.OpenAsync();
-
-                var query = @"DELETE FROM ""UserRefreshTokens"" WHERE ""UserId"" = @UserId";
-
-                var rowsAffected = await connection.ExecuteAsync(query, new { UserId = userId });
-
-                return rowsAffected > 0;
+                await transaction.RollbackAsync();
+                return false;
             }
+
+            var rowsAffected = await connection.ExecuteAsync(
+                @"DELETE FROM ""UserRefreshTokens"" WHERE ""UserId"" = @UserId",
+                new { UserId = userId },
+                transaction);
+            await transaction.CommitAsync();
+            return rowsAffected > 0;
         }
 
         public async Task<bool> SavePasswordResetToken(long userId, string hashedToken, DateTime expiry)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using var connection = new NpgsqlConnection(_config.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            if (!await LockUser(connection, transaction, userId))
             {
-                await connection.OpenAsync();
-
-                var query = @"INSERT INTO ""UserPasswordResetTokens"" (""UserId"", ""TokenHash"", ""ExpiryDate"") 
-                     VALUES (@UserId, @TokenHash, @ExpiryDate)";
-
-                var rowsAffected = await connection.ExecuteAsync(query, new { UserId = userId, TokenHash = hashedToken, ExpiryDate = expiry });
-                return rowsAffected > 0;
+                await transaction.RollbackAsync();
+                return false;
             }
+
+            var rowsAffected = await connection.ExecuteAsync(
+                @"INSERT INTO ""UserPasswordResetTokens"" (""UserId"", ""TokenHash"", ""ExpiryDate"")
+                  VALUES (@UserId, @TokenHash, @ExpiryDate)",
+                new { UserId = userId, TokenHash = hashedToken, ExpiryDate = expiry },
+                transaction);
+            await transaction.CommitAsync();
+            return rowsAffected > 0;
         }
 
         public async Task<long?> GetUserIdByPasswordResetToken(string hashedToken)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 await connection.OpenAsync();
 
@@ -320,22 +538,76 @@ namespace TableMasterApi.DAL
             }
         }
 
+        public async Task<bool> ResetPassword(string hashedToken, string newPassword)
+        {
+            await using var connection = new NpgsqlConnection(_config.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            var userId = await connection.QuerySingleOrDefaultAsync<long?>(
+                @"SELECT ""UserId"" FROM ""UserPasswordResetTokens""
+                  WHERE ""TokenHash"" = @TokenHash
+                    AND ""ExpiryDate"" > CURRENT_TIMESTAMP
+                    AND ""UsedAt"" IS NULL
+                  LIMIT 1",
+                new { TokenHash = hashedToken },
+                transaction);
+            if (userId is null || !await LockUser(connection, transaction, userId.Value))
+            {
+                await transaction.RollbackAsync();
+                return false;
+            }
+
+            var consumedUserId = await connection.QuerySingleOrDefaultAsync<long?>(
+                @"UPDATE ""UserPasswordResetTokens""
+                  SET ""UsedAt"" = CURRENT_TIMESTAMP
+                  WHERE ""TokenHash"" = @TokenHash
+                    AND ""UserId"" = @UserId
+                    AND ""ExpiryDate"" > CURRENT_TIMESTAMP
+                    AND ""UsedAt"" IS NULL
+                  RETURNING ""UserId""",
+                new { TokenHash = hashedToken, UserId = userId.Value },
+                transaction);
+            if (consumedUserId is null)
+            {
+                await transaction.RollbackAsync();
+                return false;
+            }
+
+            var passwordHasher = new PasswordHasher<UserIn>();
+            var hashedPassword = passwordHasher.HashPassword(null!, newPassword);
+            await connection.ExecuteAsync(
+                @"UPDATE ""User"" SET ""Password"" = @HashedPassword WHERE ""Id"" = @UserId",
+                new { HashedPassword = hashedPassword, UserId = userId.Value },
+                transaction);
+            await RevokeAuthenticationTokens(connection, transaction, userId.Value);
+            await transaction.CommitAsync();
+            return true;
+        }
+
         public async Task<bool> DeletePasswordResetTokensForUser(long userId)
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using var connection = new NpgsqlConnection(_config.ConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            if (!await LockUser(connection, transaction, userId))
             {
-                await connection.OpenAsync();
-
-                var query = @"DELETE FROM ""UserPasswordResetTokens"" WHERE ""UserId"" = @UserId";
-
-                var rowsAffected = await connection.ExecuteAsync(query, new { UserId = userId });
-                return rowsAffected > 0;
+                await transaction.RollbackAsync();
+                return false;
             }
+
+            var rowsAffected = await connection.ExecuteAsync(
+                @"DELETE FROM ""UserPasswordResetTokens"" WHERE ""UserId"" = @UserId",
+                new { UserId = userId },
+                transaction);
+            await transaction.CommitAsync();
+            return rowsAffected > 0;
         }
 
         public async Task<bool> DeleteExpiredPasswordResetTokens()
         {
-            using (var connection = new NpgsqlConnection(_config.ConnectionString))
+            await using (var connection = new NpgsqlConnection(_config.ConnectionString))
             {
                 await connection.OpenAsync();
 
@@ -344,6 +616,33 @@ namespace TableMasterApi.DAL
                 var rowsAffected = await connection.ExecuteAsync(query);
                 return rowsAffected > 0;
             }
+        }
+
+        private static async Task<bool> LockUser(
+            NpgsqlConnection connection,
+            NpgsqlTransaction transaction,
+            long userId)
+        {
+            var lockedUserId = await connection.QuerySingleOrDefaultAsync<long?>(
+                @"SELECT ""Id"" FROM ""User"" WHERE ""Id"" = @UserId FOR UPDATE",
+                new { UserId = userId },
+                transaction);
+            return lockedUserId is not null;
+        }
+
+        private static async Task RevokeAuthenticationTokens(
+            NpgsqlConnection connection,
+            NpgsqlTransaction transaction,
+            long userId)
+        {
+            await connection.ExecuteAsync(
+                @"DELETE FROM ""UserRefreshTokens"" WHERE ""UserId"" = @UserId",
+                new { UserId = userId },
+                transaction);
+            await connection.ExecuteAsync(
+                @"DELETE FROM ""UserPasswordResetTokens"" WHERE ""UserId"" = @UserId",
+                new { UserId = userId },
+                transaction);
         }
 
     }

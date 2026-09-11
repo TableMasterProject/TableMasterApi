@@ -1,4 +1,5 @@
 using System.Net;
+using Npgsql;
 using System.Text.Json;
 
 namespace TableMasterApi.Middleware
@@ -24,6 +25,14 @@ namespace TableMasterApi.Middleware
             {
                 await WriteErrorAsync(context, HttpStatusCode.Unauthorized, exception.Message);
             }
+            catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                await WriteErrorAsync(context, HttpStatusCode.Conflict, "Une ressource identique existe déjà.");
+            }
+            catch (PostgresException exception) when (exception.SqlState is PostgresErrorCodes.ForeignKeyViolation or PostgresErrorCodes.CheckViolation)
+            {
+                await WriteErrorAsync(context, HttpStatusCode.BadRequest, "Les données ne respectent pas les contraintes de cette ressource.");
+            }
             catch (Exception exception)
             {
                 _logger.LogError(exception, "Erreur non geree pendant le traitement HTTP.");
@@ -41,7 +50,7 @@ namespace TableMasterApi.Middleware
             context.Response.Clear();
             context.Response.ContentType = "application/json";
             context.Response.StatusCode = (int)statusCode;
-            await context.Response.WriteAsync(JsonSerializer.Serialize(new { error = message }));
+            await context.Response.WriteAsync(JsonSerializer.Serialize(new { error = message, traceId = context.TraceIdentifier }));
         }
     }
 }

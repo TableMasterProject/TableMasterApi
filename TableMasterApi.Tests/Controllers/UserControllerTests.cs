@@ -60,6 +60,22 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
+        public async Task GetUserById_ShouldReturnUnauthorized_WhenIdentityHasNoUserId()
+        {
+            var userDal = new Mock<IUserDAL>();
+            var authDal = new Mock<IAuthDAL>();
+            var currentUserService = new Mock<ICurrentUserService>();
+            currentUserService.Setup(x => x.GetUserId(It.IsAny<System.Security.Claims.ClaimsPrincipal>()))
+                .Throws<UnauthorizedAccessException>();
+            var controller = new UserController(userDal.Object, authDal.Object, _jwtService, currentUserService.Object);
+
+            var result = await controller.GetUserById(42);
+
+            result.Result.Should().BeOfType<UnauthorizedResult>();
+            userDal.Verify(x => x.GetUserById(It.IsAny<long>()), Times.Never);
+        }
+
+        [Fact]
         public async Task PutUser_ShouldUseCurrentUserId()
         {
             var userDal = new Mock<IUserDAL>();
@@ -105,10 +121,9 @@ namespace TableMasterApi.Tests.Controllers
 
             string? savedHash = null;
 
-            userDal.Setup(x => x.AddUser(input)).ReturnsAsync(createdUser);
-            userDal.Setup(x => x.SaveRefreshToken(createdUser.Id, It.IsAny<string>(), It.IsAny<DateTime>()))
-                .Callback<long, string, DateTime>((_, hash, __) => savedHash = hash)
-                .ReturnsAsync(true);
+            userDal.Setup(x => x.AddUserWithSession(input, It.IsAny<string>(), It.IsAny<DateTime>()))
+                .Callback<UserIn, string, DateTime>((_, hash, __) => savedHash = hash)
+                .ReturnsAsync(createdUser);
 
             var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
 
@@ -124,8 +139,7 @@ namespace TableMasterApi.Tests.Controllers
             savedHash.Should().Be(_jwtService.HashToken(payload.RefreshToken));
             _jwtService.ExtractUserIdFromToken(payload.AccessToken).Should().Be(createdUser.Id);
 
-            userDal.Verify(x => x.AddUser(input), Times.Once);
-            userDal.Verify(x => x.SaveRefreshToken(createdUser.Id, It.IsAny<string>(), It.IsAny<DateTime>()), Times.Once);
+            userDal.Verify(x => x.AddUserWithSession(input, It.IsAny<string>(), It.IsAny<DateTime>()), Times.Once);
         }
 
         [Fact]
@@ -150,9 +164,8 @@ namespace TableMasterApi.Tests.Controllers
                 CreatedAt = DateTime.UtcNow
             };
 
-            userDal.Setup(x => x.GetUserById(userId)).ReturnsAsync(storedUser);
-            authDal.Setup(x => x.VerifyPassword(storedUser.Password, "OldPassword!1")).Returns(true);
-            userDal.Setup(x => x.PutPassword(storedUser.Id, "NewPassword!2")).ReturnsAsync(true);
+            userDal.Setup(x => x.ChangePassword(userId, "OldPassword!1", "NewPassword!2"))
+                .ReturnsAsync(PasswordChangeResult.Success);
 
             var result = await controller.PutPassword(new PasswordEntity
             {
@@ -163,9 +176,7 @@ namespace TableMasterApi.Tests.Controllers
             var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
             ok.Value.Should().Be(true);
 
-            userDal.Verify(x => x.GetUserById(userId), Times.Once);
-            authDal.Verify(x => x.VerifyPassword(storedUser.Password, "OldPassword!1"), Times.Once);
-            userDal.Verify(x => x.PutPassword(storedUser.Id, "NewPassword!2"), Times.Once);
+            userDal.Verify(x => x.ChangePassword(userId, "OldPassword!1", "NewPassword!2"), Times.Once);
         }
 
         [Fact]
@@ -176,7 +187,8 @@ namespace TableMasterApi.Tests.Controllers
             var controller = new UserController(userDal.Object, authDal.Object, _jwtService);
             ControllerTestHelper.SetBearerToken(controller, _jwtService, 99);
 
-            userDal.Setup(x => x.GetUserById(99)).ReturnsAsync((UserDb?)null);
+            userDal.Setup(x => x.ChangePassword(99, "OldPassword!1", "NewPassword!2"))
+                .ReturnsAsync(PasswordChangeResult.UserNotFound);
 
             var result = await controller.PutPassword(new PasswordEntity
             {
@@ -185,7 +197,7 @@ namespace TableMasterApi.Tests.Controllers
             });
 
             result.Result.Should().BeOfType<NotFoundResult>();
-            authDal.Verify(x => x.VerifyPassword(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            userDal.Verify(x => x.ChangePassword(99, "OldPassword!1", "NewPassword!2"), Times.Once);
         }
 
         [Fact]
@@ -197,8 +209,8 @@ namespace TableMasterApi.Tests.Controllers
             ControllerTestHelper.SetBearerToken(controller, _jwtService, 99);
             var storedUser = TestData.UserDb(99);
 
-            userDal.Setup(x => x.GetUserById(99)).ReturnsAsync(storedUser);
-            authDal.Setup(x => x.VerifyPassword(storedUser.Password, "wrong")).Returns(false);
+            userDal.Setup(x => x.ChangePassword(99, "wrong", "NewPassword!2"))
+                .ReturnsAsync(PasswordChangeResult.InvalidOldPassword);
 
             var result = await controller.PutPassword(new PasswordEntity
             {
@@ -206,8 +218,8 @@ namespace TableMasterApi.Tests.Controllers
                 NewPassword = "NewPassword!2"
             });
 
-            result.Result.Should().BeOfType<NotFoundObjectResult>();
-            userDal.Verify(x => x.PutPassword(It.IsAny<long>(), It.IsAny<string>()), Times.Never);
+            result.Result.Should().BeOfType<BadRequestObjectResult>();
+            userDal.Verify(x => x.ChangePassword(99, "wrong", "NewPassword!2"), Times.Once);
         }
 
         [Fact]
@@ -219,9 +231,8 @@ namespace TableMasterApi.Tests.Controllers
             ControllerTestHelper.SetBearerToken(controller, _jwtService, 99);
             var storedUser = TestData.UserDb(99);
 
-            userDal.Setup(x => x.GetUserById(99)).ReturnsAsync(storedUser);
-            authDal.Setup(x => x.VerifyPassword(storedUser.Password, "OldPassword!1")).Returns(true);
-            userDal.Setup(x => x.PutPassword(99, "NewPassword!2")).ReturnsAsync(false);
+            userDal.Setup(x => x.ChangePassword(99, "OldPassword!1", "NewPassword!2"))
+                .ReturnsAsync(PasswordChangeResult.Unknown);
 
             var result = await controller.PutPassword(new PasswordEntity
             {
@@ -229,7 +240,8 @@ namespace TableMasterApi.Tests.Controllers
                 NewPassword = "NewPassword!2"
             });
 
-            result.Result.Should().BeOfType<NotFoundObjectResult>();
+            result.Result.Should().BeOfType<ObjectResult>()
+                .Which.StatusCode.Should().Be(500);
         }
 
         [Fact]

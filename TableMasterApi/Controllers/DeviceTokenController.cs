@@ -13,12 +13,12 @@ namespace TableMasterApi.Controllers
     public class DeviceTokenController : ControllerBase
     {
         private readonly IDeviceTokenDAL _deviceTokenDAL;
-        private readonly JwtService _jwtService;
+        private readonly ICurrentUserService _currentUser;
 
-        public DeviceTokenController(IDeviceTokenDAL deviceTokenDAL, JwtService jwtService)
+        public DeviceTokenController(IDeviceTokenDAL deviceTokenDAL, JwtService jwtService, ICurrentUserService? currentUser = null)
         {
             _deviceTokenDAL = deviceTokenDAL;
-            _jwtService = jwtService;
+            _currentUser = currentUser ?? new CurrentUserService();
         }
 
         [Authorize]
@@ -28,9 +28,7 @@ namespace TableMasterApi.Controllers
             if (model == null || string.IsNullOrWhiteSpace(model.DeviceToken))
                 return BadRequest("Device token is required.");
 
-            var authorization = HttpContext.Request.Headers["Authorization"].ToString();
-            var token = _jwtService.ExtractTokenFromAuthorization(authorization);
-            var userId = _jwtService.ExtractUserIdFromToken(token);
+            var userId = _currentUser.GetUserId(User);
 
             await _deviceTokenDAL.SaveDeviceTokenAsync(userId, model.DeviceToken, model.DevicePlatform ?? "unknown");
             return Ok();
@@ -43,9 +41,7 @@ namespace TableMasterApi.Controllers
             if (string.IsNullOrWhiteSpace(deviceToken))
                 return BadRequest("Device token is required.");
 
-            var authorization = HttpContext.Request.Headers["Authorization"].ToString();
-            var token = _jwtService.ExtractTokenFromAuthorization(authorization);
-            var userId = _jwtService.ExtractUserIdFromToken(token);
+            var userId = _currentUser.GetUserId(User);
 
             await _deviceTokenDAL.DeleteDeviceTokenAsync(userId, deviceToken);
             return Ok();

@@ -1,4 +1,4 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
@@ -16,11 +16,13 @@ namespace TableMasterApi.Controllers
         private readonly IClosedDayExceptionDAL _dal;
         private readonly IRestaurantDAL _restaurantDAL;
 
-        private readonly JwtService _jwtService;
+        private readonly ICurrentUserService _currentUser;
+        private readonly IAvailabilityNotifier? _availability;
 
-        public ClosedDayExceptionController(IClosedDayExceptionDAL closedDayExceptionDAL, IRestaurantDAL restaurantDAL, JwtService jwtService)
+        public ClosedDayExceptionController(IClosedDayExceptionDAL closedDayExceptionDAL, IRestaurantDAL restaurantDAL, JwtService jwtService, ICurrentUserService? currentUser = null, IAvailabilityNotifier? availability = null)
         {
-            _jwtService = jwtService;
+            _currentUser = currentUser ?? new CurrentUserService();
+            _availability = availability;
             _dal = closedDayExceptionDAL;
             _restaurantDAL = restaurantDAL;
         }
@@ -29,15 +31,8 @@ namespace TableMasterApi.Controllers
         [HttpGet("restaurant/{restaurantId}")]
         public async Task<ActionResult<IEnumerable<ClosedDayExceptionOut>>> GetByRestaurant(long restaurantId)
         {
-            try
-            {
-                var result = await _dal.GetByRestaurantAsync(restaurantId);
-                return Ok(result);
-            }
-            catch (PostgresException e)
-            {
-                return StatusCode(500, e.Message);
-            }
+            var result = await _dal.GetByRestaurantAsync(restaurantId);
+            return Ok(result);
 
         }
 
@@ -45,28 +40,22 @@ namespace TableMasterApi.Controllers
         [HttpPost]
         public async Task<ActionResult<ClosedDayExceptionOut>> Post([FromBody] ClosedDayExceptionIn input)
         {
-            try
+            if (input == null)
             {
-                if (input == null)
-                {
-                    return BadRequest();
-                }
-
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
-                var restaurant = await _restaurantDAL.GetRestaurantById(input.RestaurantId);
-                if (restaurant == null)
-                    return NotFound("Le restaurant n'existe pas");
-                if (restaurant.UserId != idUserToken)
-                    return Forbid();
-
-                var result = await _dal.InsertAsync(input);
-                return Ok(result);
+                return BadRequest();
             }
-            catch (PostgresException e)
-            {
-                return StatusCode(500, e.Message);
-            }
+
+            var idUserToken = _currentUser.GetUserId(User);
+            var restaurant = await _restaurantDAL.GetRestaurantById(input.RestaurantId);
+            if (restaurant == null)
+                return NotFound("Le restaurant n'existe pas");
+            if (restaurant.UserId != idUserToken)
+                return Forbid();
+
+            if (input.ExceptionDateEnd < input.ExceptionDateBegin) return BadRequest("Période de fermeture invalide.");
+            var result = await _dal.InsertAsync(input);
+            if (_availability != null) await _availability.NotifyAsync(input.RestaurantId);
+            return Ok(result);
 
         }
 
@@ -74,34 +63,31 @@ namespace TableMasterApi.Controllers
         [HttpPut("{id}")]
         public async Task<ActionResult<ClosedDayExceptionOut>> Put(long id, [FromBody] ClosedDayExceptionIn input)
         {
-            try
+            var idUserToken = _currentUser.GetUserId(User);
+
+            if (input == null)
             {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
-
-                if (input == null)
-                {
-                    return BadRequest();
-                }
-                var tableBefore = await _dal.GetByIdAsync(id);
-                if (tableBefore == null)
-                    return NotFound("La DailyActivity n'existe pas");
-
-                var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
-
-                if (restaurant == null)
-                    return NotFound("Le restaurant n'existe pas");
-                if (restaurant.UserId != idUserToken)
-                    return Unauthorized("Vous n'êtes pas autorisé à modifier cette DailyActivity");
-
-                var result = await _dal.UpdateAsync(id, input);
-                if (result == null) return NotFound();
-                return Ok(result);
+                return BadRequest();
             }
-            catch (PostgresException e)
-            {
-                return StatusCode(500, e.Message);
-            }
+            var tableBefore = await _dal.GetByIdAsync(id);
+            if (tableBefore == null)
+                return NotFound("La DailyActivity n'existe pas");
+
+            var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
+
+            if (restaurant == null)
+                return NotFound("Le restaurant n'existe pas");
+            if (restaurant.UserId != idUserToken)
+                return Forbid();
+
+            if (input.RestaurantId != tableBefore.RestaurantId)
+                return BadRequest("Le restaurant ne peut pas être modifié.");
+
+            if (input.ExceptionDateEnd < input.ExceptionDateBegin) return BadRequest("Période de fermeture invalide.");
+            var result = await _dal.UpdateAsync(id, input);
+            if (result != null && _availability != null) await _availability.NotifyAsync(tableBefore.RestaurantId);
+            if (result == null) return NotFound();
+            return Ok(result);
 
         }
 
@@ -109,29 +95,22 @@ namespace TableMasterApi.Controllers
         [HttpDelete("{id}")]
         public async Task<ActionResult> Delete(long id)
         {
-            try
-            {
-                var token = _jwtService.ExtractTokenFromAuthorization(HttpContext.Request.Headers["Authorization"]);
-                var idUserToken = _jwtService.ExtractUserIdFromToken(token);
+            var idUserToken = _currentUser.GetUserId(User);
 
-                var tableBefore = await _dal.GetByIdAsync(id);
-                if (tableBefore == null)
-                    return NotFound("La DailyActivity n'existe pas");
+            var tableBefore = await _dal.GetByIdAsync(id);
+            if (tableBefore == null)
+                return NotFound("La DailyActivity n'existe pas");
 
-                var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
+            var restaurant = await _restaurantDAL.GetRestaurantById(tableBefore.RestaurantId);
 
-                if (restaurant == null)
-                    return NotFound("Le restaurant n'existe pas");
-                if (restaurant.UserId != idUserToken)
-                    return Unauthorized("Vous n'êtes pas autorisé à modifier cette DailyActivity");
+            if (restaurant == null)
+                return NotFound("Le restaurant n'existe pas");
+            if (restaurant.UserId != idUserToken)
+                return Forbid();
 
-                var success = await _dal.DeleteAsync(id);
-                return success ? Ok() : NotFound();
-            }
-            catch (PostgresException e)
-            {
-                return StatusCode(500, e.Message);
-            }
+            var success = await _dal.DeleteAsync(id);
+            if (success && _availability != null) await _availability.NotifyAsync(tableBefore.RestaurantId);
+            return success ? Ok() : NotFound();
 
         }
     }

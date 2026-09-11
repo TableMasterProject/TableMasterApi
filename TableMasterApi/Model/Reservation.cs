@@ -1,4 +1,4 @@
-﻿namespace TableMasterApi.Model
+namespace TableMasterApi.Model
 {
     public enum ReservationStatus : byte
     {
@@ -13,6 +13,7 @@
         public long? UserId { get; set; }
         public long? TableId { get; set; }
         public long? RestaurantId { get; set; }
+        [System.Text.Json.Serialization.JsonConverter(typeof(TableMasterApi.Service.ParisReservationDateConverter))]
         public DateTime ReservationDate { get; set; }
         public int NumberOfPeople { get; set; }
         public string? SpecialRequest { get; set; }
@@ -24,6 +25,7 @@
     public class QuickReservationIn
     {
         public long TableId { get; set; }
+        [System.Text.Json.Serialization.JsonConverter(typeof(TableMasterApi.Service.ParisReservationDateConverter))]
         public DateTime ReservationDate { get; set; }
         public int NumberOfPeople { get; set; }
         public required string GuestName { get; set; }
@@ -43,6 +45,7 @@
     public class ReservationAvailabilityOut
     {
         public long TableId { get; set; }
+        [System.Text.Json.Serialization.JsonConverter(typeof(TableMasterApi.Service.ParisReservationDateConverter))]
         public DateTime ReservationDate { get; set; }
     }
 

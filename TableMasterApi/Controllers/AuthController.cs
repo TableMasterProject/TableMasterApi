@@ -13,7 +13,6 @@ namespace TableMasterApi.Controllers
     public class AuthController : ControllerBase
     {
         private readonly IUserDAL _userDAL;
-        private readonly IAuthDAL _authDAL;
         private readonly JwtService _jwtService;
         private readonly IAppLinkService _appLinkService;
         private readonly IEmailNotificationService _emailNotificationService;
@@ -27,7 +26,6 @@ namespace TableMasterApi.Controllers
         {
             _jwtService = jwtService;
             _userDAL = userDAL;
-            _authDAL = authDAL;
             _appLinkService = appLinkService ?? new AppLinkService(Microsoft.Extensions.Options.Options.Create(new AppLinksOptions()));
             _emailNotificationService = emailNotificationService ?? NullEmailNotificationService.Instance;
         }
@@ -41,21 +39,17 @@ namespace TableMasterApi.Controllers
                 return BadRequest();
             }
 
-            var user = await _userDAL.GetUserByEmail(loginUser.Email);
-            if (user == null)
-            {
-                return NotFound("Email non existant");
-            }
-
-            if (!_authDAL.VerifyPassword(user.Password, loginUser.Password))
-            {
-                return NotFound("Mot de passe incorecte");
-            }
-
             var refreshToken = _jwtService.GenerateRefreshToken();
             var hashedRefreshToken = _jwtService.HashToken(refreshToken);
-
-            await _userDAL.SaveRefreshToken(user.Id, hashedRefreshToken, DateTime.UtcNow.AddDays(30));
+            var user = await _userDAL.CreateSession(
+                loginUser.Email,
+                loginUser.Password,
+                hashedRefreshToken,
+                DateTime.UtcNow.AddDays(30));
+            if (user == null)
+            {
+                return Unauthorized("Identifiants invalides.");
+            }
 
             return Ok(new LoginUserOut
             {
@@ -101,20 +95,11 @@ namespace TableMasterApi.Controllers
             }
 
             var hashedToken = _jwtService.HashToken(request.Token);
-            var userId = await _userDAL.GetUserIdByPasswordResetToken(hashedToken);
-            if (userId == null)
+            var passwordChanged = await _userDAL.ResetPassword(hashedToken, request.NewPassword);
+            if (!passwordChanged)
             {
                 return BadRequest("Lien invalide ou expire.");
             }
-
-            var passwordChanged = await _userDAL.PutPassword(userId.Value, request.NewPassword);
-            if (!passwordChanged)
-            {
-                return NotFound("Utilisateur introuvable.");
-            }
-
-            await _userDAL.DeletePasswordResetTokensForUser(userId.Value);
-            await _userDAL.DeleteAllRefreshTokensForUser(userId.Value);
 
             return Ok(true);
         }
@@ -129,23 +114,16 @@ namespace TableMasterApi.Controllers
             }
 
             var hashedInput = _jwtService.HashToken(model.RefreshToken);
-            var userId = await _userDAL.GetUserIdByRefreshToken(hashedInput);
-            if (userId == null)
-            {
-                return Unauthorized("Session expirée");
-            }
-
-            var user = await _userDAL.GetUserById(userId.Value);
+            var newRefreshToken = _jwtService.GenerateRefreshToken();
+            var newHashed = _jwtService.HashToken(newRefreshToken);
+            var user = await _userDAL.RotateRefreshToken(
+                hashedInput,
+                newHashed,
+                DateTime.UtcNow.AddDays(30));
             if (user == null)
             {
                 return Unauthorized("Session expirée");
             }
-
-            var newRefreshToken = _jwtService.GenerateRefreshToken();
-            var newHashed = _jwtService.HashToken(newRefreshToken);
-
-            await _userDAL.DeleteRefreshToken(hashedInput);
-            await _userDAL.SaveRefreshToken(user.Id, newHashed, DateTime.UtcNow.AddDays(30));
 
             return Ok(new LoginUserOut
             {

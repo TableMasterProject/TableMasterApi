@@ -33,7 +33,7 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
-        public async Task GetAll_ShouldReturnStatus500_WhenDalThrows()
+        public async Task GetAll_ShouldLetMiddlewareHandleUnexpectedExceptions()
         {
             var restaurantDal = new Mock<IRestaurantDAL>();
             var controller = new RestaurantController(restaurantDal.Object, _jwtService);
@@ -42,10 +42,10 @@ namespace TableMasterApi.Tests.Controllers
             restaurantDal.Setup(x => x.GetRestaurants(It.IsAny<SearchRestaurant>()))
                 .ThrowsAsync(new InvalidOperationException("db down"));
 
-            var result = await controller.GetAll(new SearchRestaurant());
+            Func<Task> action = async () => await controller.GetAll(new SearchRestaurant());
 
-            var error = result.Result.Should().BeOfType<ObjectResult>().Subject;
-            error.StatusCode.Should().Be(500);
+            await action.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("db down");
         }
 
         [Fact]
@@ -237,7 +237,7 @@ namespace TableMasterApi.Tests.Controllers
 
             var error = result.Result.Should().BeOfType<ObjectResult>().Subject;
             error.StatusCode.Should().Be(503);
-            error.Value.Should().Be("Google Maps a refuse la requete.");
+            error.Value.Should().Be("Service de géolocalisation indisponible.");
         }
 
         [Fact]

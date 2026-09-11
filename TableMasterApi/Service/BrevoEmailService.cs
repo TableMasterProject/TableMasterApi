@@ -53,9 +53,9 @@ namespace TableMasterApi.Service
                 return true;
             }
 
-            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogWarning("Brevo a refuse l'email avec le statut {StatusCode}: {Body}", response.StatusCode, responseBody);
-            return false;
+            _logger.LogWarning("Brevo a refuse l'email avec le statut {StatusCode}.", response.StatusCode);
+            var permanent = (int)response.StatusCode is >= 400 and < 500 && (int)response.StatusCode is not 408 and not 429;
+            throw new NotificationDeliveryException("email_http_" + (int)response.StatusCode, permanent);
         }
 
         private sealed record BrevoSendEmailRequest(

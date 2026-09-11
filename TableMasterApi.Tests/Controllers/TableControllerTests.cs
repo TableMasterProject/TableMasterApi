@@ -65,7 +65,7 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
-        public async Task CreateTable_ShouldReturnUnauthorized_WhenRestaurantBelongsToAnotherUser()
+        public async Task CreateTable_ShouldReturnForbidden_WhenRestaurantBelongsToAnotherUser()
         {
             var tableDal = new Mock<ITableDAL>();
             var restaurantDal = new Mock<IRestaurantDAL>();
@@ -76,7 +76,7 @@ namespace TableMasterApi.Tests.Controllers
 
             var result = await controller.CreateTable(10, TestData.TableIn());
 
-            result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+            result.Result.Should().BeOfType<ForbidResult>();
             tableDal.Verify(x => x.CreateTable(It.IsAny<TableEntityIn>()), Times.Never);
         }
 

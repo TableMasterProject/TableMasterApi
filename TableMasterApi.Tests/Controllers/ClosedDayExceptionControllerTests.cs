@@ -79,7 +79,7 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Fact]
-        public async Task Put_ShouldReturnUnauthorized_WhenRestaurantBelongsToAnotherUser()
+        public async Task Put_ShouldReturnForbidden_WhenRestaurantBelongsToAnotherUser()
         {
             var dal = new Mock<IClosedDayExceptionDAL>();
             var restaurantDal = new Mock<IRestaurantDAL>();
@@ -91,7 +91,7 @@ namespace TableMasterApi.Tests.Controllers
 
             var result = await controller.Put(8, TestData.ClosedDayExceptionIn());
 
-            result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+            result.Result.Should().BeOfType<ForbidResult>();
             dal.Verify(x => x.UpdateAsync(It.IsAny<long>(), It.IsAny<ClosedDayExceptionIn>()), Times.Never);
         }
 

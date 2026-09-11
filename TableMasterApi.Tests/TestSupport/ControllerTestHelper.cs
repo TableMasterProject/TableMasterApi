@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
+using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Mvc;
 
 namespace TableMasterApi.Tests.TestSupport
@@ -12,6 +14,7 @@ namespace TableMasterApi.Tests.TestSupport
                 HttpContext = new DefaultHttpContext()
             };
 
+            controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(new JwtSecurityTokenHandler().ReadJwtToken(token).Claims, "TestBearer"));
             controller.ControllerContext.HttpContext.Request.Headers["Authorization"] = $"Bearer {token}";
         }
 

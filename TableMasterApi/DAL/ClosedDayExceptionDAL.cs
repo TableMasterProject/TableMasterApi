@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using Npgsql;
 using TableMasterApi.Model;
 using TableMasterApi.DAL.Interfaces;
@@ -49,11 +49,10 @@ namespace TableMasterApi.DAL
         {
             var query = @"
                 UPDATE ""ClosedDayException""
-                SET ""RestaurantId"" = @RestaurantId,
-                    ""ExceptionDateBegin"" = @ExceptionDateBegin,
+                SET ""ExceptionDateBegin"" = @ExceptionDateBegin,
                     ""ExceptionDateEnd"" = @ExceptionDateEnd,
                     ""Reason"" = @Reason
-                WHERE ""Id"" = @Id
+                WHERE ""Id"" = @Id AND ""RestaurantId"" = @RestaurantId
                 RETURNING ""Id"", ""RestaurantId"", ""ExceptionDateBegin"", ""ExceptionDateEnd"", ""Reason"", ""CreatedAt"";
             ";
 
