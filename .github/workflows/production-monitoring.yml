@@ -128,7 +128,7 @@ jobs:
 
       - name: Update monitoring incident
         id: incident
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           MONITOR_STATE: ${{ steps.probe.outputs.state }}
           MONITOR_SUMMARY: ${{ steps.probe.outputs.summary }}
