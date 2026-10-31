@@ -130,7 +130,13 @@ jobs:
           ssh-keyscan -H ${{ secrets.ORACLE_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy with Docker Compose
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
         run: |
+          printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/oracle_key ${{ secrets.ORACLE_USER }}@${{ secrets.ORACLE_HOST }} \
+            "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
+
           ssh -i ~/.ssh/oracle_key ${{ secrets.ORACLE_USER }}@${{ secrets.ORACLE_HOST }} << 'EOF'
             set -e
 
@@ -140,11 +146,10 @@ jobs:
             git reset --hard origin/Prod
 
             test -f .env || test -f TableMasterApi/.env
-            test -f TableMasterApi/tablemaster-firebase.json
-
-            echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+            test -f tablemaster-firebase.json
 
             chmod +x ops/*.sh
+            FIREBASE_SERVICE_ACCOUNT_HOST_FILE="../tablemaster-firebase.json" \
             CORS_ALLOWED_ORIGIN="https://client.tablemaster.maxencecoeur.fr" \
             APP_LINKS_BASE_URL="https://client.tablemaster.maxencecoeur.fr" \
             API_IMAGE_TAG="${{ github.sha }}" \
