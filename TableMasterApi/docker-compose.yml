@@ -66,10 +66,14 @@ services:
     restart: always
     networks:
       - postgres-network
+      - tablemaster-proxy
 
 networks:
   postgres-network:
     driver: bridge
+  tablemaster-proxy:
+    external: true
+    name: tablemaster-proxy
 
 volumes:
   postgres18-data:

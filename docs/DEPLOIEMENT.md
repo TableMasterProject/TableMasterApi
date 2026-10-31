@@ -20,7 +20,7 @@ Cette procédure couvre **un déploiement complet** de l'API .NET sur un serveur
 ### Sur le serveur cible
 
 - Linux x86_64 ou ARM64 avec Docker + Docker Compose installés.
-- Reverse-proxy **Nginx** (avec Let's Encrypt) déjà configuré pour terminer le TLS et proxifier vers le port API.
+- **Nginx Proxy Manager** (avec Let's Encrypt) déjà configuré pour terminer le TLS et joindre l'API sur le réseau Docker externe `tablemaster-proxy`.
 - Un utilisateur non-root pour exécuter Docker (`usermod -aG docker $USER`).
 - Volumes persistants pour : PostgreSQL data, clé Firebase, logs.
 
@@ -64,45 +64,36 @@ docker push ghcr.io/<owner>/tablemaster-api:latest
 ### 2.3. Déployer sur le serveur
 
 ```bash
-ssh deploy@api.tablemaster.lmpe.ovh
-cd /opt/tablemaster
-docker compose pull api          # tire la nouvelle image
-docker compose up -d api         # remplace le conteneur en place
-docker compose ps                # vérifie que api est "healthy"
+ssh ubuntu@141.253.120.94
+cd /opt/tablemaster/prod/TableMasterApi
+export CORS_ALLOWED_ORIGIN=https://client.tablemaster.maxencecoeur.fr
+export APP_LINKS_BASE_URL=https://client.tablemaster.maxencecoeur.fr
+API_IMAGE_TAG=<sha-image> APP_VERSION=<version> \
+  SENTRY_RELEASE=<release-sentry> ./ops/deploy-api.sh
 ```
 
-Le compose attendu (extrait) :
+Le workflow de production fournit `CORS_ALLOWED_ORIGIN` et
+`APP_LINKS_BASE_URL` pour le nouveau domaine client à chaque déploiement.
+Pour une exécution manuelle, conserver les deux `export` ci-dessus afin de ne
+pas reprendre d'anciennes valeurs du `.env` du serveur.
 
-```yaml
-services:
-  api:
-    image: ghcr.io/<owner>/tablemaster-api:latest
-    restart: unless-stopped
-    env_file: /opt/tablemaster/.env.prod
-    volumes:
-      - /opt/tablemaster/secrets/tablemaster-firebase.json:/app/tablemaster-firebase.json:ro
-    ports:
-      - "127.0.0.1:5080:8080"     # exposé seulement en local, Nginx proxy devant
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/ready"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-```
+Le Compose de production est `TableMasterApi/docker-compose.yml`. Il connecte
+`api` à `postgres-network` et à `tablemaster-proxy`, mais pas PostgreSQL au
+réseau du proxy. Créer `tablemaster-proxy` sur Oracle avant le déploiement et
+y connecter durablement Nginx Proxy Manager (voir `ops/README.md`).
 
-Avant la bascule du hub authentifié, recopier aussi la configuration
-`ops/nginx-api.reference.conf` dans le virtual host en service. Le bloc
-`location /reservationHub` utilise le format d'accès
-`tablemaster_hub_no_args`, qui journalise `$uri` sans la query string et évite
-donc d'écrire le JWT `access_token` transmis par les navigateurs.
+Le proxy host NPM de `api.tablemaster.maxencecoeur.fr` doit utiliser le schéma
+`http`, l'hôte `TableMasterApi-prod`, le port interne `8080`, le support WebSocket
+et un certificat HTTPS public. Le proxy ne doit pas journaliser la query string
+`access_token` de `/reservationHub`.
 
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-```
+Le Compose réellement déployé est `TableMasterApi/docker-compose.yml` ; le
+fichier Firebase est monté depuis ce même répertoire, en lecture seule.
 
-Après le rechargement, ouvrir une connexion Web SignalR puis vérifier qu'aucune
-occurrence de `access_token` n'est présente dans les logs Nginx récents.
+`ops/nginx-api.reference.conf` documente le comportement attendu d'un proxy
+Nginx classique ; il n'est pas déployé automatiquement par NPM. Après
+configuration de NPM, ouvrir une connexion Web SignalR puis vérifier qu'aucune
+occurrence de `access_token` n'est présente dans ses logs récents.
 
 ### 2.4. Appliquer les migrations BDD
 
@@ -116,16 +107,16 @@ Pour la livraison sessions/temps réel, préparer le build Flutter coordonné av
 
 ```bash
 # Liveness
-curl -fsS https://api.tablemaster.lmpe.ovh/health  # → {"status":"Healthy"}
+curl -fsS https://api.tablemaster.maxencecoeur.fr/health  # → {"status":"Healthy"}
 
 # Readiness (vérifie DB + Firebase)
-curl -fsS https://api.tablemaster.lmpe.ovh/ready
+curl -fsS https://api.tablemaster.maxencecoeur.fr/ready
 
 # Version exposée (si Swagger activé)
-curl -fsS https://api.tablemaster.lmpe.ovh/swagger/v1/swagger.json | jq '.info.version'
+curl -fsS https://api.tablemaster.maxencecoeur.fr/swagger/v1/swagger.json | jq '.info.version'
 
 # Endpoint métier de smoke
-curl -fsS -H "x-api-version: 1.0" https://api.tablemaster.lmpe.ovh/api/Restaurant
+curl -fsS -H "x-api-version: 1.0" https://api.tablemaster.maxencecoeur.fr/api/Restaurant
 ```
 
 Tous les checks doivent être OK avant de considérer le déploiement validé.
@@ -136,17 +127,17 @@ En environnement `Development`, l'endpoint `GET /api/monitoring/sentry-test` env
 
 ## 3. Rollback
 
-L'image précédente reste taggée par son `sha` court dans GHCR. Pour revenir en arrière :
+`ops/deploy-api.sh` revient automatiquement à l'image précédente si les
+contrôles post-déploiement échouent. Pour un rollback manuel, utiliser le SHA
+complet de l'image stable et les scripts du dépôt :
 
 ```bash
-ssh deploy@api.tablemaster.lmpe.ovh
-cd /opt/tablemaster
-# Identifier le sha de la version stable précédente :
-docker compose images api
-# Forcer le tag :
-sed -i 's|tablemaster-api:.*|tablemaster-api:<sha-precedent>|' docker-compose.yml
-docker compose pull api
-docker compose up -d api
+ssh ubuntu@141.253.120.94
+cd /opt/tablemaster/prod/TableMasterApi
+export CORS_ALLOWED_ORIGIN=https://client.tablemaster.maxencecoeur.fr
+export APP_LINKS_BASE_URL=https://client.tablemaster.maxencecoeur.fr
+API_IMAGE_TAG=<sha-precedent> APP_VERSION=<version-precedente> \
+  SENTRY_RELEASE=<release-precedente> ./ops/deploy-api.sh
 ```
 
 > Les migrations DbUp sont conçues idempotentes mais **non réversibles**. Un rollback applicatif ne rollback pas le schéma BDD. Si un script destructif est passé, restaurer depuis la sauvegarde (cf. §5).
@@ -157,14 +148,21 @@ docker compose up -d api
 
 Si l'environnement n'existe pas encore :
 
-1. Créer le `/opt/tablemaster/.env.prod` à partir du template `.env.example`.
-2. Déposer la clé Firebase : `/opt/tablemaster/secrets/tablemaster-firebase.json` (`chmod 400`).
-3. Démarrer PostgreSQL :
+1. Créer `/opt/tablemaster/prod/TableMasterApi/.env` ou
+   `/opt/tablemaster/prod/TableMasterApi/TableMasterApi/.env` à partir du
+   template `TableMasterApi/.env.example`.
+2. Déposer la clé Firebase dans
+   `/opt/tablemaster/prod/TableMasterApi/TableMasterApi/tablemaster-firebase.json`
+   (`chmod 400`) ; elle reste hors Git.
+3. Créer le réseau Docker `tablemaster-proxy`, puis démarrer PostgreSQL depuis
+   la racine du dépôt :
    ```bash
-   docker compose up -d postgres
-   docker compose exec postgres pg_isready
+   docker network create tablemaster-proxy
+   docker compose --env-file .env -f TableMasterApi/docker-compose.yml up -d postgres
+   docker compose --env-file .env -f TableMasterApi/docker-compose.yml exec postgres pg_isready
    ```
-4. Démarrer l'API : les migrations s'exécutent automatiquement.
+   Adapter `--env-file` vers `TableMasterApi/.env` si c'est l'emplacement choisi.
+4. Démarrer l'API avec `ops/deploy-api.sh` : les migrations s'exécutent automatiquement.
 5. Vérifier `/ready`.
 
 ---

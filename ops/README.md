@@ -3,6 +3,48 @@
 Ce dossier contient les procédures exécutées par la CI et utilisables manuellement
 sur le VPS. Elles ne doivent jamais afficher le contenu de `.env`.
 
+## Connexion SSH au serveur Oracle
+
+Depuis PowerShell sur la machine qui possède la clé privée :
+
+```powershell
+ssh -i "C:\key\x86 ssh-key.key" ubuntu@141.253.120.94
+```
+
+Ne pas ajouter la clé privée au dépôt.
+
+## Réseau du reverse proxy
+
+Les trois applications et Nginx Proxy Manager doivent rejoindre le réseau Docker
+externe `tablemaster-proxy`. Le créer une seule fois sur Oracle avant un premier
+déploiement (`docker network create tablemaster-proxy`). Les Compose de production
+de l'API, du client Flutter et du site vitrine y rattachent leurs conteneurs Web ;
+PostgreSQL reste uniquement sur le réseau privé de l'API.
+
+Le Compose de Nginx Proxy Manager, conservé sur le serveur, doit aussi déclarer
+`tablemaster-proxy` comme réseau externe du service `nginx-proxy-manager`.
+Un simple `docker network connect` manuel est perdu si le conteneur est recréé.
+Conserver ses réseaux existants et ajouter :
+
+```yaml
+services:
+  nginx-proxy-manager:
+    networks:
+      - default
+      - tablemaster-proxy
+networks:
+  default: {}
+  tablemaster-proxy:
+    external: true
+    name: tablemaster-proxy
+```
+
+Dans NPM, utiliser les cibles HTTP `tablemaster-website:80`,
+`tablemaster-mobile-web:80` et `TableMasterApi-prod:8080` pour les domaines
+`tablemaster.maxencecoeur.fr`, `client.tablemaster.maxencecoeur.fr` et
+`api.tablemaster.maxencecoeur.fr`. Activer WebSockets pour l'API et terminer
+HTTPS avec les certificats dans NPM.
+
 ## Déploiement API
 
 Le workflow fournit obligatoirement `API_IMAGE_TAG`, `APP_VERSION` et
@@ -31,7 +73,8 @@ la présence des tables puis supprime cette base, sans toucher à la production.
 
 ## Supervision externe
 
-Le workflow `production-monitoring.yml` vérifie le web, `/health`, `/ready` et
+Le workflow `production-monitoring.yml` vérifie le site vitrine, Flutter Web,
+`/health`, `/ready` et
 le certificat TLS. Trois tentatives sont réalisées avant l'ouverture d'un
 incident. Une seule issue portant le label `monitoring` reste ouverte et la
 reprise du service la ferme.
@@ -69,5 +112,5 @@ Vérifier la conformité du proxy en cas d'incident sur le temps réel :
 curl -i -N \
   -H "Connection: Upgrade" -H "Upgrade: websocket" \
   -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-  https://api.tablemaster.lmpe.ovh/reservationHub
+  https://api.tablemaster.maxencecoeur.fr/reservationHub
 ```
