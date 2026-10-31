@@ -65,18 +65,16 @@ docker push ghcr.io/<owner>/tablemaster-api:latest
 
 ```bash
 ssh ubuntu@141.253.120.94
-cd /opt/tablemaster/prod/TableMasterApi
-export FIREBASE_SERVICE_ACCOUNT_HOST_FILE=../tablemaster-firebase.json
+cd /opt/tablemaster/prod
 export CORS_ALLOWED_ORIGIN=https://client.tablemaster.maxencecoeur.fr
 export APP_LINKS_BASE_URL=https://client.tablemaster.maxencecoeur.fr
 API_IMAGE_TAG=<sha-image> APP_VERSION=<version> \
   SENTRY_RELEASE=<release-sentry> ./ops/deploy-api.sh
 ```
 
-Le workflow de production fournit `FIREBASE_SERVICE_ACCOUNT_HOST_FILE`,
-`CORS_ALLOWED_ORIGIN` et `APP_LINKS_BASE_URL` à chaque déploiement. Pour une
-exécution manuelle, conserver ces trois `export` afin de reprendre la clé
-Firebase à la racine du dépôt et de ne pas réutiliser d'anciennes URL du `.env`.
+Le workflow de production fournit `CORS_ALLOWED_ORIGIN` et
+`APP_LINKS_BASE_URL` à chaque déploiement. Pour une exécution manuelle,
+conserver ces deux `export` afin de ne pas réutiliser d'anciennes URL du `.env`.
 
 Le Compose de production est `TableMasterApi/docker-compose.yml`. Il connecte
 `api` à `postgres-network` et à `tablemaster-proxy`, mais pas PostgreSQL au
@@ -88,10 +86,10 @@ Le proxy host NPM de `api.tablemaster.maxencecoeur.fr` doit utiliser le schéma
 et un certificat HTTPS public. Le proxy ne doit pas journaliser la query string
 `access_token` de `/reservationHub`.
 
-Le Compose réellement déployé est `TableMasterApi/docker-compose.yml`. Par
-défaut, il monte la clé Firebase depuis son propre répertoire (utile en local).
-Sur Oracle, `FIREBASE_SERVICE_ACCOUNT_HOST_FILE=../tablemaster-firebase.json`
-monte le fichier déjà présent à la racine du dépôt, en lecture seule.
+Le Compose réellement déployé est `TableMasterApi/docker-compose.yml`. Il
+monte la clé Firebase depuis ce même répertoire, en lecture seule. Sur Oracle,
+la racine Git est `/opt/tablemaster/prod` et la clé se trouve dans
+`/opt/tablemaster/prod/TableMasterApi/tablemaster-firebase.json`.
 
 `ops/nginx-api.reference.conf` documente le comportement attendu d'un proxy
 Nginx classique ; il n'est pas déployé automatiquement par NPM. Après
@@ -136,8 +134,7 @@ complet de l'image stable et les scripts du dépôt :
 
 ```bash
 ssh ubuntu@141.253.120.94
-cd /opt/tablemaster/prod/TableMasterApi
-export FIREBASE_SERVICE_ACCOUNT_HOST_FILE=../tablemaster-firebase.json
+cd /opt/tablemaster/prod
 export CORS_ALLOWED_ORIGIN=https://client.tablemaster.maxencecoeur.fr
 export APP_LINKS_BASE_URL=https://client.tablemaster.maxencecoeur.fr
 API_IMAGE_TAG=<sha-precedent> APP_VERSION=<version-precedente> \
@@ -152,8 +149,8 @@ API_IMAGE_TAG=<sha-precedent> APP_VERSION=<version-precedente> \
 
 Si l'environnement n'existe pas encore :
 
-1. Créer `/opt/tablemaster/prod/TableMasterApi/.env` ou
-   `/opt/tablemaster/prod/TableMasterApi/TableMasterApi/.env` à partir du
+1. Créer `/opt/tablemaster/prod/.env` ou
+   `/opt/tablemaster/prod/TableMasterApi/.env` à partir du
    template `TableMasterApi/.env.example`.
 2. Déposer la clé Firebase dans
    `/opt/tablemaster/prod/TableMasterApi/tablemaster-firebase.json`
@@ -166,8 +163,8 @@ Si l'environnement n'existe pas encore :
    docker compose --env-file .env -f TableMasterApi/docker-compose.yml exec postgres pg_isready
    ```
    Adapter `--env-file` vers `TableMasterApi/.env` si c'est l'emplacement choisi.
-4. Exporter `FIREBASE_SERVICE_ACCOUNT_HOST_FILE=../tablemaster-firebase.json`,
-   puis démarrer l'API avec `ops/deploy-api.sh` : les migrations s'exécutent automatiquement.
+4. Démarrer l'API avec `ops/deploy-api.sh` depuis la racine du dépôt : les
+   migrations s'exécutent automatiquement.
 5. Vérifier `/ready`.
 
 ---

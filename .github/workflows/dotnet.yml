@@ -140,16 +140,15 @@ jobs:
           ssh -i ~/.ssh/oracle_key ${{ secrets.ORACLE_USER }}@${{ secrets.ORACLE_HOST }} << 'EOF'
             set -e
 
-            cd /opt/tablemaster/prod/TableMasterApi
+            cd /opt/tablemaster/prod
 
             git fetch origin Prod
             git reset --hard origin/Prod
 
             test -f .env || test -f TableMasterApi/.env
-            test -f tablemaster-firebase.json
+            test -f TableMasterApi/tablemaster-firebase.json
 
             chmod +x ops/*.sh
-            FIREBASE_SERVICE_ACCOUNT_HOST_FILE="../tablemaster-firebase.json" \
             CORS_ALLOWED_ORIGIN="https://client.tablemaster.maxencecoeur.fr" \
             APP_LINKS_BASE_URL="https://client.tablemaster.maxencecoeur.fr" \
             API_IMAGE_TAG="${{ github.sha }}" \
