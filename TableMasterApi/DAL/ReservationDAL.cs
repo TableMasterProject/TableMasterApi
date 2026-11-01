@@ -118,6 +118,9 @@ namespace TableMasterApi.DAL
                 filters.Add(@"R.""RestaurantId"" = @restaurantId");
             }
 
+            var orderBy = searchReservations.SortDescending
+                ? @"R.""ReservationDate"" DESC, R.""Id"" DESC"
+                : @"R.""ReservationDate"" ASC, R.""Id"" ASC";
             var query = $@"
         SELECT 
             R.""Id"", R.""UserId"", R.""TableId"", R.""RestaurantId"", R.""ReservationDate"", R.""NumberOfPeople"", R.""SpecialRequest"", R.""GuestName"", R.""GuestPhone"", R.""CreatedAt"", R.""Status"",
@@ -131,7 +134,7 @@ namespace TableMasterApi.DAL
         LEFT JOIN ""Restaurant"" Res ON R.""RestaurantId"" = Res.""Id""
         WHERE 
             {string.Join(" AND ", filters)}
-        ORDER BY R.""ReservationDate"" ASC
+        ORDER BY {orderBy}
         LIMIT @PageSize OFFSET @Offset;";
 
             using (var connection = _connections.CreateConnection())

@@ -4,6 +4,7 @@
     {
         public long? Offset { get; set; } = 0;
         public long? PageSize { get; set; } = 20;
+        public bool SortDescending { get; set; } = false;
 
         public long? tableId { get; set; }
 
