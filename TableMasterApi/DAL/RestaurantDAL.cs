@@ -57,9 +57,14 @@ namespace TableMasterApi.DAL
                     ""Restaurant"" R
                 WHERE 
                     (@CuisineType IS NULL OR R.""CuisineType"" ILIKE '%' || @CuisineType || '%') AND
-                    (@PaymentMethods IS NULL OR R.""PaymentMethods"" ILIKE '%' || @PaymentMethods || '%')
+                    (@PaymentMethods IS NULL OR R.""PaymentMethods"" ILIKE '%' || @PaymentMethods || '%') AND
+                    (@HasViewport = FALSE OR (
+                        R.""Latitude"" BETWEEN @SouthLatitude AND @NorthLatitude AND
+                        (@WestLongitude <= @EastLongitude AND R.""Longitude"" BETWEEN @WestLongitude AND @EastLongitude OR
+                         @WestLongitude > @EastLongitude AND (R.""Longitude"" >= @WestLongitude OR R.""Longitude"" <= @EastLongitude))
+                    ))
                 ORDER BY 
-                    ""DistanceForSearch"" ASC
+                    ""DistanceForSearch"" ASC NULLS LAST, R.""Id"" ASC
                 LIMIT @PageSize OFFSET @Offset;";
 
             using (var connection = new NpgsqlConnection(_config.ConnectionString))
@@ -72,6 +77,11 @@ namespace TableMasterApi.DAL
                     search.Longitude,
                     search.CurrentUserLatitude,
                     search.CurrentUserLongitude,
+                    search.HasViewport,
+                    search.SouthLatitude,
+                    search.NorthLatitude,
+                    search.WestLongitude,
+                    search.EastLongitude,
                     search.CuisineType,
                     search.PaymentMethods
                 });

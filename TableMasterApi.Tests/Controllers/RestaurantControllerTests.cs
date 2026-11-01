@@ -32,6 +32,52 @@ namespace TableMasterApi.Tests.Controllers
             ok.Value.Should().BeEquivalentTo(restaurants);
         }
 
+        [Theory]
+        [InlineData(44.0, null, 1.0, 5.0)]
+        [InlineData(50.0, 40.0, 1.0, 5.0)]
+        [InlineData(-91.0, 40.0, 1.0, 5.0)]
+        [InlineData(40.0, 50.0, -181.0, 5.0)]
+        public async Task GetAll_ShouldRejectIncompleteOrInvalidViewport(
+            double? south, double? north, double? west, double? east)
+        {
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 55);
+            var search = new SearchRestaurant
+            {
+                SouthLatitude = (decimal?)south,
+                NorthLatitude = (decimal?)north,
+                WestLongitude = (decimal?)west,
+                EastLongitude = (decimal?)east
+            };
+
+            var result = await controller.GetAll(search);
+
+            result.Result.Should().BeOfType<BadRequestObjectResult>();
+            restaurantDal.Verify(x => x.GetRestaurants(It.IsAny<SearchRestaurant>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task GetAll_ShouldPassViewportCrossingDateLineToDal()
+        {
+            var restaurantDal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(restaurantDal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 55);
+            var search = new SearchRestaurant
+            {
+                SouthLatitude = -25,
+                NorthLatitude = -10,
+                WestLongitude = 170,
+                EastLongitude = -170
+            };
+            restaurantDal.Setup(x => x.GetRestaurants(search)).ReturnsAsync([]);
+
+            var result = await controller.GetAll(search);
+
+            result.Result.Should().BeOfType<OkObjectResult>();
+            restaurantDal.Verify(x => x.GetRestaurants(search), Times.Once);
+        }
+
         [Fact]
         public async Task GetAll_ShouldLetMiddlewareHandleUnexpectedExceptions()
         {

@@ -28,6 +28,9 @@ namespace TableMasterApi.Controllers
         [Authorize]
         public async Task<ActionResult<ICollection<RestaurantOut>>> GetAll([FromQuery] SearchRestaurant search)
         {
+            if (!search.HasValidViewport)
+                return BadRequest("Les bornes de la carte sont invalides.");
+
             try
             {
                 var idUserToken = _currentUser.GetUserId(User);
