@@ -33,6 +33,25 @@ namespace TableMasterApi.Tests.Controllers
         }
 
         [Theory]
+        [InlineData(15.0, null, 2.0)]
+        [InlineData(0.0, 45.0, 2.0)]
+        [InlineData(15.0, 95.0, 2.0)]
+        public async Task GetAll_ShouldRejectInvalidRadius(double radius, double? latitude, double? longitude)
+        {
+            var dal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(dal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 55);
+            var result = await controller.GetAll(new SearchRestaurant
+            {
+                RadiusKm = (decimal)radius,
+                Latitude = (decimal?)latitude,
+                Longitude = (decimal?)longitude
+            });
+            result.Result.Should().BeOfType<BadRequestObjectResult>();
+            dal.Verify(x => x.GetRestaurants(It.IsAny<SearchRestaurant>()), Times.Never);
+        }
+
+        [Theory]
         [InlineData(44.0, null, 1.0, 5.0)]
         [InlineData(50.0, 40.0, 1.0, 5.0)]
         [InlineData(-91.0, 40.0, 1.0, 5.0)]
@@ -76,6 +95,21 @@ namespace TableMasterApi.Tests.Controllers
 
             result.Result.Should().BeOfType<OkObjectResult>();
             restaurantDal.Verify(x => x.GetRestaurants(search), Times.Once);
+        }
+
+        [Fact]
+        public async Task GetAll_ShouldPassValidRadiusToDal()
+        {
+            var dal = new Mock<IRestaurantDAL>();
+            var controller = new RestaurantController(dal.Object, _jwtService);
+            ControllerTestHelper.SetBearerToken(controller, _jwtService, 55);
+            var search = new SearchRestaurant { Latitude = 45.758m, Longitude = 4.8351m, RadiusKm = 15m };
+            dal.Setup(x => x.GetRestaurants(search)).ReturnsAsync([]);
+
+            var result = await controller.GetAll(search);
+
+            result.Result.Should().BeOfType<OkObjectResult>();
+            dal.Verify(x => x.GetRestaurants(search), Times.Once);
         }
 
         [Fact]

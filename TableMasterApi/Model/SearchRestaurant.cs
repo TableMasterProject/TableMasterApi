@@ -12,11 +12,17 @@
         public decimal? NorthLatitude { get; set; }
         public decimal? WestLongitude { get; set; }
         public decimal? EastLongitude { get; set; }
+        public decimal? RadiusKm { get; set; }
         public string? CuisineType { get; set; }
         public string? PaymentMethods { get; set; }
 
         public bool HasViewport => SouthLatitude.HasValue && NorthLatitude.HasValue &&
             WestLongitude.HasValue && EastLongitude.HasValue;
+
+        public bool HasValidRadius => !RadiusKm.HasValue ||
+            (RadiusKm > 0 && RadiusKm <= 500 &&
+             Latitude >= -90 && Latitude <= 90 &&
+             Longitude >= -180 && Longitude <= 180 && !HasViewport);
 
         public bool HasValidViewport
         {

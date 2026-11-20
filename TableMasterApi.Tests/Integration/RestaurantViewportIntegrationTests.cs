@@ -12,6 +12,28 @@ namespace TableMasterApi.Tests.Integration;
 public class RestaurantViewportIntegrationTests(PostgresFixture fixture)
 {
     [SkippableFact]
+    public async Task Search_RadiusIncludesNearbyRestaurantsOnly()
+    {
+        Skip.IfNot(fixture.IsAvailable, fixture.UnavailableReason ?? "Docker indisponible");
+        await fixture.ResetAsync();
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        var userId = await connection.QuerySingleAsync<long>(
+            """INSERT INTO "User" ("Email", "Password", "FirstName", "LastName") VALUES ('radius@example.com', 'x', 'Radius', 'Test') RETURNING "Id";""");
+        await connection.ExecuteAsync(
+            """INSERT INTO "Restaurant" ("UserId", "RestaurantName", "Latitude", "Longitude") VALUES (@UserId, 'Centre', 45.758, 4.8351), (@UserId, 'Proche', 45.80, 4.84), (@UserId, 'Loin', 46.2, 4.83)""",
+            new { UserId = userId });
+        var dal = new RestaurantDAL(fixture.Config,
+            new GoogleMapsService(fixture.Config, new HttpClient(), NullLogger<GoogleMapsService>.Instance));
+
+        var results = (await dal.GetRestaurants(new SearchRestaurant
+        {
+            Latitude = 45.758m, Longitude = 4.8351m, RadiusKm = 15m
+        })).ToList();
+
+        results.Select(r => r.RestaurantName).Should().Equal("Centre", "Proche");
+    }
+
+    [SkippableFact]
     public async Task Search_IncludesBothSidesOfDateLine()
     {
         Skip.IfNot(fixture.IsAvailable, fixture.UnavailableReason ?? "Docker indisponible");

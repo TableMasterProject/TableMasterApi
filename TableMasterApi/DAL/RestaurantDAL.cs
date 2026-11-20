@@ -29,11 +29,11 @@ namespace TableMasterApi.DAL
                     R.*,
                     ROUND((
                         6371000 * 
-                        ACOS(
+                        ACOS(LEAST(1.0, GREATEST(-1.0,
                             COS(RADIANS(CAST(@Latitude AS double precision))) * COS(RADIANS(CAST(R.""Latitude"" AS double precision))) * 
                             COS(RADIANS(CAST(R.""Longitude"" AS double precision)) - RADIANS(CAST(@Longitude AS double precision))) + 
                             SIN(RADIANS(CAST(@Latitude AS double precision))) * SIN(RADIANS(CAST(R.""Latitude"" AS double precision)))
-                        ))::numeric,
+                        ))))::numeric,
                         0
                     ) AS ""DistanceForSearch"",
                     ROUND((
@@ -62,6 +62,14 @@ namespace TableMasterApi.DAL
                         R.""Latitude"" BETWEEN @SouthLatitude AND @NorthLatitude AND
                         (@WestLongitude <= @EastLongitude AND R.""Longitude"" BETWEEN @WestLongitude AND @EastLongitude OR
                          @WestLongitude > @EastLongitude AND (R.""Longitude"" >= @WestLongitude OR R.""Longitude"" <= @EastLongitude))
+                    )) AND
+                    (@RadiusKm IS NULL OR (
+                        R.""Latitude"" IS NOT NULL AND R.""Longitude"" IS NOT NULL AND
+                        6371 * ACOS(LEAST(1.0, GREATEST(-1.0,
+                            COS(RADIANS(CAST(@Latitude AS double precision))) * COS(RADIANS(CAST(R.""Latitude"" AS double precision))) *
+                            COS(RADIANS(CAST(R.""Longitude"" AS double precision)) - RADIANS(CAST(@Longitude AS double precision))) +
+                            SIN(RADIANS(CAST(@Latitude AS double precision))) * SIN(RADIANS(CAST(R.""Latitude"" AS double precision)))
+                        ))) <= CAST(@RadiusKm AS double precision)
                     ))
                 ORDER BY 
                     ""DistanceForSearch"" ASC NULLS LAST, R.""Id"" ASC
@@ -78,6 +86,7 @@ namespace TableMasterApi.DAL
                     search.CurrentUserLatitude,
                     search.CurrentUserLongitude,
                     search.HasViewport,
+                    search.RadiusKm,
                     search.SouthLatitude,
                     search.NorthLatitude,
                     search.WestLongitude,

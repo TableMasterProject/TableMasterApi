@@ -30,6 +30,8 @@ namespace TableMasterApi.Controllers
         {
             if (!search.HasValidViewport)
                 return BadRequest("Les bornes de la carte sont invalides.");
+            if (!search.HasValidRadius)
+                return BadRequest("Le rayon ou les coordonnées de recherche sont invalides.");
 
             try
             {
